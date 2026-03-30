@@ -17,17 +17,19 @@ const SCIENTIFIC_PACKAGES = [
 ];
 
 const notebookState = {
-  title: "Untitled",
   runtimeReady: false,
-  cells: [],
   saveState: "Unsaved",
+  workspace: {
+    activeNotebookId: null,
+    notebooks: [],
+  },
 };
 
 let nextCellId = 1;
 let saveTimer = null;
-const STORAGE_KEY = "py_whole.notebook.v1";
 const EMBEDDED_PYODIDE = globalThis.__PYWHOLE_EMBEDDED_PYODIDE__ || { available: false };
 const BUNDLED_PACKAGE_SET = new Set(EMBEDDED_PYODIDE.bundledPackages || []);
+const WORKSPACE_STORAGE_KEY = "py_whole.workspace.v1";
 
 const runtimeAdapter = {
   pyodide: null,
@@ -301,6 +303,21 @@ function updateSaveState(text) {
   document.getElementById("save-state").textContent = text;
 }
 
+function createNotebookRecord(title = "Untitled") {
+  return {
+    id: `nb-${crypto.randomUUID()}`,
+    title,
+    cells: [],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function activeNotebook() {
+  return notebookState.workspace.notebooks.find(
+    (notebook) => notebook.id === notebookState.workspace.activeNotebookId,
+  );
+}
+
 function createCodeCell(source, output = "") {
   return {
     id: nextCellId++,
@@ -346,8 +363,8 @@ function createImageOutput(mime, data) {
 }
 
 function createStarterNotebook() {
-  notebookState.title = "Untitled";
-  notebookState.cells = [
+  const notebook = createNotebookRecord("Untitled");
+  notebook.cells = [
     createCodeCell(
       [
         "# py_whole proof of concept",
@@ -360,6 +377,7 @@ function createStarterNotebook() {
       "Cell output will appear here.",
     ),
   ];
+  return notebook;
 }
 
 function scheduleAutosave() {
@@ -369,17 +387,21 @@ function scheduleAutosave() {
 }
 
 function syncNotebookTitle() {
-  document.getElementById("notebook-title-input").value = notebookState.title;
+  const notebook = activeNotebook();
+  document.getElementById("notebook-title-input").value = notebook ? notebook.title : "Untitled";
 }
 
 function notebookFileName() {
-  const trimmed = notebookState.title.trim() || "Untitled";
+  const notebook = activeNotebook();
+  const trimmed = (notebook ? notebook.title : "Untitled").trim() || "Untitled";
   return trimmed.endsWith(".ipynb") ? trimmed : `${trimmed}.ipynb`;
 }
 
 function buildIpynbDocument() {
+  const notebook = activeNotebook();
+  const cells = notebook ? notebook.cells : [];
   return {
-    cells: notebookState.cells.map((cell) => ({
+    cells: cells.map((cell) => ({
       cell_type: cell.cellType,
       execution_count: cell.cellType === "code" ? cell.executionCount : null,
       metadata: {},
@@ -490,36 +512,45 @@ function parseOutputs(outputs) {
 
 function saveNotebookToStorage() {
   const payload = {
-    title: notebookState.title,
-    notebook: buildIpynbDocument(),
+    activeNotebookId: notebookState.workspace.activeNotebookId,
+    notebooks: notebookState.workspace.notebooks.map((notebook) => ({
+      id: notebook.id,
+      title: notebook.title,
+      updatedAt: notebook.updatedAt,
+      notebook: buildIpynbDocumentForNotebook(notebook),
+    })),
   };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(payload));
   updateSaveState(`Saved locally at ${new Date().toLocaleTimeString()}`);
 }
 
 function loadNotebookFromStorage() {
-  const raw = localStorage.getItem(STORAGE_KEY);
+  const raw = localStorage.getItem(WORKSPACE_STORAGE_KEY);
   if (!raw) {
-    createStarterNotebook();
+    const notebook = createStarterNotebook();
+    notebookState.workspace.notebooks = [notebook];
+    notebookState.workspace.activeNotebookId = notebook.id;
     updateSaveState("Not yet saved");
     return;
   }
 
   try {
     const parsed = JSON.parse(raw);
-    applyImportedNotebook(parsed.notebook, parsed.title || "Recovered");
+    applyWorkspaceState(parsed);
     updateSaveState("Recovered from browser storage");
   } catch (error) {
     console.error(error);
-    createStarterNotebook();
+    const notebook = createStarterNotebook();
+    notebookState.workspace.notebooks = [notebook];
+    notebookState.workspace.activeNotebookId = notebook.id;
     updateSaveState("Recovery failed");
   }
 }
 
 function applyImportedNotebook(document, titleHint) {
   const importedCells = Array.isArray(document.cells) ? document.cells : [];
-  notebookState.title = stripNotebookExtension(titleHint || "Imported");
-  notebookState.cells = importedCells.length
+  const notebook = createNotebookRecord(stripNotebookExtension(titleHint || "Imported"));
+  notebook.cells = importedCells.length
     ? importedCells.map((cell) => ({
         id: nextCellId++,
         cellType: cell.cell_type === "markdown" ? "markdown" : "code",
@@ -529,7 +560,48 @@ function applyImportedNotebook(document, titleHint) {
         status: "Idle",
       }))
     : [createCodeCell("print('new notebook')")];
+  notebook.updatedAt = new Date().toISOString();
+  notebookState.workspace.notebooks.push(notebook);
+  notebookState.workspace.activeNotebookId = notebook.id;
   syncNotebookTitle();
+}
+
+function applyWorkspaceState(state) {
+  const notebooks = Array.isArray(state.notebooks) ? state.notebooks : [];
+  notebookState.workspace.notebooks = notebooks.length
+    ? notebooks.map((entry) => hydrateNotebookRecord(entry))
+    : [createStarterNotebook()];
+  notebookState.workspace.activeNotebookId =
+    state.activeNotebookId && notebookState.workspace.notebooks.some((entry) => entry.id === state.activeNotebookId)
+      ? state.activeNotebookId
+      : notebookState.workspace.notebooks[0].id;
+}
+
+function hydrateNotebookRecord(entry) {
+  const notebook = createNotebookRecord(stripNotebookExtension(entry.title || "Recovered"));
+  notebook.id = entry.id || notebook.id;
+  notebook.updatedAt = entry.updatedAt || new Date().toISOString();
+  const document = entry.notebook || {};
+  const importedCells = Array.isArray(document.cells) ? document.cells : [];
+  notebook.cells = importedCells.length
+    ? importedCells.map((cell) => ({
+        id: nextCellId++,
+        cellType: cell.cell_type === "markdown" ? "markdown" : "code",
+        source: joinNotebookSource(cell.source),
+        outputs: parseOutputs(cell.outputs),
+        executionCount: cell.execution_count ?? null,
+        status: "Idle",
+      }))
+    : [createCodeCell("print('new notebook')")];
+  return notebook;
+}
+
+function buildIpynbDocumentForNotebook(notebook) {
+  const previousId = notebookState.workspace.activeNotebookId;
+  notebookState.workspace.activeNotebookId = notebook.id;
+  const document = buildIpynbDocument();
+  notebookState.workspace.activeNotebookId = previousId;
+  return document;
 }
 
 function stripNotebookExtension(name) {
@@ -543,6 +615,30 @@ function renderPackageList() {
       const item = document.createElement("li");
       item.textContent = BUNDLED_PACKAGE_SET.has(pkg) ? `${pkg} (bundled)` : `${pkg} (planned)`;
       return item;
+    }),
+  );
+}
+
+function renderWorkspaceList() {
+  const list = document.getElementById("workspace-list");
+  list.replaceChildren(
+    ...notebookState.workspace.notebooks.map((notebook) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "workspace-item";
+      button.classList.toggle("is-active", notebook.id === notebookState.workspace.activeNotebookId);
+      button.addEventListener("click", () => switchNotebook(notebook.id));
+
+      const title = document.createElement("span");
+      title.className = "workspace-item-title";
+      title.textContent = `${notebook.title}.ipynb`;
+
+      const meta = document.createElement("span");
+      meta.className = "workspace-item-meta";
+      meta.textContent = new Date(notebook.updatedAt).toLocaleString();
+
+      button.append(title, meta);
+      return button;
     }),
   );
 }
@@ -703,11 +799,16 @@ function escapeHtml(text) {
 }
 
 function renderNotebook() {
+  const notebook = activeNotebook();
+  if (!notebook) {
+    return;
+  }
   const cellsRoot = document.getElementById("notebook-cells");
   const template = document.getElementById("cell-template");
+  renderWorkspaceList();
 
   cellsRoot.replaceChildren(
-    ...notebookState.cells.map((cell, index) => {
+    ...notebook.cells.map((cell, index) => {
       const fragment = template.content.cloneNode(true);
       const article = fragment.querySelector(".cell");
       const kindNode = fragment.querySelector(".cell-kind");
@@ -739,7 +840,7 @@ function renderNotebook() {
       runButton.addEventListener("click", () => runCell(cell.id));
       deleteButton.addEventListener("click", () => deleteCell(cell.id));
       moveUpButton.disabled = index === 0;
-      moveDownButton.disabled = index === notebookState.cells.length - 1;
+      moveDownButton.disabled = index === notebook.cells.length - 1;
       runButton.disabled = cell.cellType !== "code";
       moveUpButton.addEventListener("click", () => moveCell(cell.id, -1));
       moveDownButton.addEventListener("click", () => moveCell(cell.id, 1));
@@ -754,42 +855,60 @@ function renderNotebook() {
 }
 
 function addCodeCell() {
-  notebookState.cells.push(createCodeCell("print('hello from py_whole')"));
+  const notebook = activeNotebook();
+  if (!notebook) {
+    return;
+  }
+  notebook.cells.push(createCodeCell("print('hello from py_whole')"));
+  notebook.updatedAt = new Date().toISOString();
   renderNotebook();
   scheduleAutosave();
 }
 
 function addMarkdownCell() {
-  notebookState.cells.push(createMarkdownCell("# Markdown cell\n\nDocument your work here."));
+  const notebook = activeNotebook();
+  if (!notebook) {
+    return;
+  }
+  notebook.cells.push(createMarkdownCell("# Markdown cell\n\nDocument your work here."));
+  notebook.updatedAt = new Date().toISOString();
   renderNotebook();
   scheduleAutosave();
 }
 
 function deleteCell(cellId) {
-  if (notebookState.cells.length === 1) {
+  const notebook = activeNotebook();
+  if (!notebook || notebook.cells.length === 1) {
     return;
   }
 
-  notebookState.cells = notebookState.cells.filter((cell) => cell.id !== cellId);
+  notebook.cells = notebook.cells.filter((cell) => cell.id !== cellId);
+  notebook.updatedAt = new Date().toISOString();
   renderNotebook();
   scheduleAutosave();
 }
 
 function moveCell(cellId, offset) {
-  const index = notebookState.cells.findIndex((cell) => cell.id === cellId);
+  const notebook = activeNotebook();
+  if (!notebook) {
+    return;
+  }
+  const index = notebook.cells.findIndex((cell) => cell.id === cellId);
   const targetIndex = index + offset;
-  if (index < 0 || targetIndex < 0 || targetIndex >= notebookState.cells.length) {
+  if (index < 0 || targetIndex < 0 || targetIndex >= notebook.cells.length) {
     return;
   }
 
-  const [cell] = notebookState.cells.splice(index, 1);
-  notebookState.cells.splice(targetIndex, 0, cell);
+  const [cell] = notebook.cells.splice(index, 1);
+  notebook.cells.splice(targetIndex, 0, cell);
+  notebook.updatedAt = new Date().toISOString();
   renderNotebook();
   scheduleAutosave();
 }
 
 function toggleCellType(cellId) {
-  const cell = notebookState.cells.find((entry) => entry.id === cellId);
+  const notebook = activeNotebook();
+  const cell = notebook && notebook.cells.find((entry) => entry.id === cellId);
   if (!cell) {
     return;
   }
@@ -804,12 +923,14 @@ function toggleCellType(cellId) {
     cell.status = "Idle";
   }
 
+  notebook.updatedAt = new Date().toISOString();
   renderNotebook();
   scheduleAutosave();
 }
 
 async function runCell(cellId) {
-  const cell = notebookState.cells.find((entry) => entry.id === cellId);
+  const notebook = activeNotebook();
+  const cell = notebook && notebook.cells.find((entry) => entry.id === cellId);
   if (!cell || cell.cellType !== "code") {
     return;
   }
@@ -828,12 +949,17 @@ async function runCell(cellId) {
     cell.status = "Error";
   }
 
+  notebook.updatedAt = new Date().toISOString();
   renderNotebook();
   scheduleAutosave();
 }
 
 async function runAllCells() {
-  for (const cell of notebookState.cells) {
+  const notebook = activeNotebook();
+  if (!notebook) {
+    return;
+  }
+  for (const cell of notebook.cells) {
     await runCell(cell.id);
   }
 }
@@ -859,8 +985,11 @@ function wireEvents() {
     .addEventListener("click", addMarkdownCell);
   document.getElementById("run-all").addEventListener("click", runAllCells);
   document
-    .getElementById("new-notebook")
+    .getElementById("new-notebook-sidebar")
     .addEventListener("click", createNewNotebook);
+  document
+    .getElementById("delete-notebook")
+    .addEventListener("click", deleteActiveNotebook);
   document
     .getElementById("export-notebook")
     .addEventListener("click", exportNotebook);
@@ -875,7 +1004,13 @@ function wireEvents() {
   document
     .getElementById("notebook-title-input")
     .addEventListener("input", (event) => {
-      notebookState.title = stripNotebookExtension(event.target.value);
+      const notebook = activeNotebook();
+      if (!notebook) {
+        return;
+      }
+      notebook.title = stripNotebookExtension(event.target.value);
+      notebook.updatedAt = new Date().toISOString();
+      renderWorkspaceList();
       scheduleAutosave();
     });
   document
@@ -884,7 +1019,33 @@ function wireEvents() {
 }
 
 function createNewNotebook() {
-  createStarterNotebook();
+  const notebook = createStarterNotebook();
+  notebookState.workspace.notebooks.push(notebook);
+  notebookState.workspace.activeNotebookId = notebook.id;
+  syncNotebookTitle();
+  renderNotebook();
+  scheduleAutosave();
+}
+
+function switchNotebook(notebookId) {
+  if (notebookState.workspace.activeNotebookId === notebookId) {
+    return;
+  }
+  notebookState.workspace.activeNotebookId = notebookId;
+  syncNotebookTitle();
+  renderNotebook();
+  scheduleAutosave();
+}
+
+function deleteActiveNotebook() {
+  if (notebookState.workspace.notebooks.length <= 1) {
+    return;
+  }
+  const currentId = notebookState.workspace.activeNotebookId;
+  notebookState.workspace.notebooks = notebookState.workspace.notebooks.filter(
+    (notebook) => notebook.id !== currentId,
+  );
+  notebookState.workspace.activeNotebookId = notebookState.workspace.notebooks[0].id;
   syncNotebookTitle();
   renderNotebook();
   scheduleAutosave();
@@ -923,7 +1084,7 @@ async function importNotebook(event) {
 }
 
 function clearRecovery() {
-  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(WORKSPACE_STORAGE_KEY);
   updateSaveState("Recovery cleared");
 }
 

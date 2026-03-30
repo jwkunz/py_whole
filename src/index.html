@@ -45,6 +45,15 @@ __INLINE_CSS__
         </section>
 
         <section class="panel">
+          <h2>Workspace</h2>
+          <div class="button-row">
+            <button id="new-notebook-sidebar">New Notebook</button>
+            <button id="delete-notebook" class="danger">Delete Notebook</button>
+          </div>
+          <div id="workspace-list" class="workspace-list"></div>
+        </section>
+
+        <section class="panel">
           <h2>Packages</h2>
           <p class="panel-copy">
             Target scientific stack for the embedded runtime:
@@ -78,7 +87,6 @@ __INLINE_CSS__
             </label>
           </div>
           <div class="button-row">
-            <button id="new-notebook" class="secondary">New Notebook</button>
             <button id="import-notebook" class="secondary">Import .ipynb</button>
             <button id="export-notebook" class="secondary">Export .ipynb</button>
             <button id="add-code-cell">Add Code Cell</button>
