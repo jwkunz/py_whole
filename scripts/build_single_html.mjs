@@ -37,16 +37,19 @@ function loadEmbeddedRuntime(projectRoot) {
   const lockFileText = fs.readFileSync(path.join(pyodideDir, "pyodide-lock.json"), "utf8");
   const wasmBase64 = fs.readFileSync(path.join(pyodideDir, "pyodide.asm.wasm")).toString("base64");
   const stdlibBase64 = fs.readFileSync(path.join(pyodideDir, "python_stdlib.zip")).toString("base64");
+  const packageAssets = loadBundledPackages(projectRoot);
 
   const manifest = {
     available: true,
     version: "0.28.2",
     indexURL: "https://pywhole.local/pyodide/",
     lockFileURL: "https://pywhole.local/pyodide/pyodide-lock.json",
+    bundledPackages: packageAssets.names,
     assets: {
       wasmBase64,
       stdlibBase64,
       lockFileText,
+      packages: packageAssets.files,
     },
   };
 
@@ -58,4 +61,41 @@ function loadEmbeddedRuntime(projectRoot) {
 
 function escapeInlineScript(text) {
   return text.replaceAll("</script", "<\\/script");
+}
+
+function loadBundledPackages(projectRoot) {
+  const packagesDir = path.join(projectRoot, "vendor", "pyodide", "packages-0.28.2");
+  if (!fs.existsSync(packagesDir)) {
+    return {
+      names: [],
+      files: {},
+    };
+  }
+
+  const fileToPackageName = {
+    "libopenblas-0.3.26.zip": "libopenblas",
+    "mpmath-1.3.0-py3-none-any.whl": "mpmath",
+    "numpy-2.2.5-cp313-cp313-pyodide_2025_0_wasm32.whl": "numpy",
+    "pandas-2.3.1-cp313-cp313-pyodide_2025_0_wasm32.whl": "pandas",
+    "python_dateutil-2.9.0.post0-py2.py3-none-any.whl": "python-dateutil",
+    "pytz-2025.2-py2.py3-none-any.whl": "pytz",
+    "scipy-1.14.1-cp313-cp313-pyodide_2025_0_wasm32.whl": "scipy",
+    "six-1.17.0-py2.py3-none-any.whl": "six",
+    "sympy-1.13.3-py3-none-any.whl": "sympy",
+  };
+
+  const names = [];
+  const files = {};
+
+  for (const [fileName, packageName] of Object.entries(fileToPackageName)) {
+    const assetPath = path.join(packagesDir, fileName);
+    if (!fs.existsSync(assetPath)) {
+      continue;
+    }
+    files[fileName] = fs.readFileSync(assetPath).toString("base64");
+    names.push(packageName);
+  }
+
+  names.sort();
+  return { names, files };
 }

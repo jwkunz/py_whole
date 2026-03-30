@@ -27,6 +27,7 @@ let nextCellId = 1;
 let saveTimer = null;
 const STORAGE_KEY = "py_whole.notebook.v1";
 const EMBEDDED_PYODIDE = globalThis.__PYWHOLE_EMBEDDED_PYODIDE__ || { available: false };
+const BUNDLED_PACKAGE_SET = new Set(EMBEDDED_PYODIDE.bundledPackages || []);
 
 const runtimeAdapter = {
   pyodide: null,
@@ -50,8 +51,14 @@ const runtimeAdapter = {
       stdout: () => {},
       stderr: () => {},
     });
+    if (EMBEDDED_PYODIDE.bundledPackages?.length) {
+      updateKernelState("Loading bundled scientific packages");
+      await this.pyodide.loadPackage(EMBEDDED_PYODIDE.bundledPackages);
+    }
     notebookState.runtimeReady = true;
-    updateKernelState(`Runtime ready (Pyodide ${EMBEDDED_PYODIDE.version})`);
+    updateKernelState(
+      `Runtime ready (Pyodide ${EMBEDDED_PYODIDE.version}, ${EMBEDDED_PYODIDE.bundledPackages?.length || 0} bundled packages)`,
+    );
   },
 
   async restart() {
@@ -150,6 +157,23 @@ function serveEmbeddedPyodideAsset(url, assetCache) {
   if (url.endsWith("pyodide-lock.json")) {
     headers.set("Content-Type", "application/json");
     return Promise.resolve(new Response(EMBEDDED_PYODIDE.assets.lockFileText, { headers }));
+  }
+  const packageFileName = url.slice(EMBEDDED_PYODIDE.indexURL.length);
+  if (EMBEDDED_PYODIDE.assets.packages && EMBEDDED_PYODIDE.assets.packages[packageFileName]) {
+    headers.set(
+      "Content-Type",
+      packageFileName.endsWith(".zip") ? "application/zip" : "application/octet-stream",
+    );
+    return Promise.resolve(
+      new Response(
+        decodeBase64Asset(
+          `pkg:${packageFileName}`,
+          EMBEDDED_PYODIDE.assets.packages[packageFileName],
+          assetCache,
+        ),
+        { headers },
+      ),
+    );
   }
   return Promise.resolve(new Response("Not found", { status: 404 }));
 }
@@ -363,7 +387,7 @@ function renderPackageList() {
   list.replaceChildren(
     ...SCIENTIFIC_PACKAGES.map((pkg) => {
       const item = document.createElement("li");
-      item.textContent = pkg;
+      item.textContent = BUNDLED_PACKAGE_SET.has(pkg) ? `${pkg} (bundled)` : `${pkg} (planned)`;
       return item;
     }),
   );
