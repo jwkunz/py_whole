@@ -1220,6 +1220,9 @@ function renderWorkspaceTreeNodes(tree) {
     const item = document.createElement("div");
     item.className = "workspace-file-item";
     item.classList.toggle("is-selected", file.id === notebookState.selectedWorkspaceFileId);
+    if (isLikelyTextFile(file)) {
+      item.addEventListener("click", () => selectWorkspaceFile(file.id));
+    }
 
     const title = document.createElement("span");
     title.className = "workspace-item-title";
@@ -1236,20 +1239,29 @@ function renderWorkspaceTreeNodes(tree) {
     exportButton.type = "button";
     exportButton.className = "secondary";
     exportButton.textContent = "Export";
-    exportButton.addEventListener("click", () => exportWorkspaceFile(file.id));
+    exportButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      exportWorkspaceFile(file.id);
+    });
 
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
     deleteButton.className = "danger";
     deleteButton.textContent = "Delete";
-    deleteButton.addEventListener("click", () => deleteWorkspaceFile(file.id));
+    deleteButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteWorkspaceFile(file.id);
+    });
 
     if (isLikelyTextFile(file)) {
       const editButton = document.createElement("button");
       editButton.type = "button";
       editButton.className = "secondary";
       editButton.textContent = "Edit";
-      editButton.addEventListener("click", () => selectWorkspaceFile(file.id));
+      editButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        selectWorkspaceFile(file.id);
+      });
       actions.append(editButton);
     }
 
@@ -2283,6 +2295,7 @@ async function importWorkspaceFiles(event) {
     return;
   }
 
+  let lastImportedEditableFileId = null;
   for (const file of files) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const relativePath = normalizeWorkspacePath(file.webkitRelativePath || file.name);
@@ -2290,6 +2303,9 @@ async function importWorkspaceFiles(event) {
       (entry) => (entry.path || entry.name) === relativePath,
     );
     const record = createWorkspaceFile(relativePath, bytes, file.type || "application/octet-stream");
+    if (isLikelyTextFile(record)) {
+      lastImportedEditableFileId = record.id;
+    }
     if (existingIndex >= 0) {
       notebookState.workspace.files.splice(existingIndex, 1, record);
     } else {
@@ -2301,6 +2317,9 @@ async function importWorkspaceFiles(event) {
     await runtimeAdapter.syncWorkspaceFiles();
   }
 
+  if (lastImportedEditableFileId) {
+    selectWorkspaceFile(lastImportedEditableFileId);
+  }
   renderNotebook();
   scheduleAutosave();
   event.target.value = "";
