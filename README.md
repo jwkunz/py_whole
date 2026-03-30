@@ -47,8 +47,15 @@ The current implementation provides:
 - markdown cell creation and cell type toggling
 - notebook autosave and recovery via browser storage
 - `.ipynb` import and export
+- embedded Pyodide core runtime for offline Python execution
 - dark-mode presentation
 - packaged scientific-library inventory in the sidebar
-- a runtime adapter seam for the future offline Python/WASM engine
+- a runtime adapter seam for the future broader scientific package set
 
-The current implementation does not yet provide embedded Python execution. The UI explicitly exposes that state so the next step can focus on bundling the runtime payload into the single-file build.
+The current implementation now embeds the Pyodide core runtime into the generated HTML and can execute basic Python code offline after runtime initialization.
+
+Current limitations:
+
+- the bundled runtime does not yet include scientific wheels such as `numpy`, `pandas`, or `scipy`
+- the package sidebar reflects the target package plan, not the currently embedded wheel set
+- runtime restart currently reloads the page because Pyodide supports only one runtime instance per JavaScript global scope

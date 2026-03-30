@@ -26,37 +26,147 @@ const notebookState = {
 let nextCellId = 1;
 let saveTimer = null;
 const STORAGE_KEY = "py_whole.notebook.v1";
+const EMBEDDED_PYODIDE = globalThis.__PYWHOLE_EMBEDDED_PYODIDE__ || { available: false };
 
 const runtimeAdapter = {
+  pyodide: null,
+
   async initialize() {
+    if (this.pyodide) {
+      notebookState.runtimeReady = true;
+      updateKernelState("Runtime ready");
+      return;
+    }
+
+    if (!EMBEDDED_PYODIDE.available || typeof globalThis.loadPyodide !== "function") {
+      throw new Error("Embedded Pyodide runtime assets are not available in this build.");
+    }
+
+    updateKernelState("Loading embedded Pyodide");
+    installPyodideAssetFetch();
+    this.pyodide = await globalThis.loadPyodide({
+      indexURL: EMBEDDED_PYODIDE.indexURL,
+      lockFileURL: EMBEDDED_PYODIDE.lockFileURL,
+      stdout: () => {},
+      stderr: () => {},
+    });
     notebookState.runtimeReady = true;
-    updateKernelState("Runtime adapter ready");
+    updateKernelState(`Runtime ready (Pyodide ${EMBEDDED_PYODIDE.version})`);
   },
 
   async restart() {
-    notebookState.runtimeReady = false;
-    updateKernelState("Restarting");
-    await this.initialize();
+    updateKernelState("Restarting via page reload");
+    window.location.reload();
   },
 
   async execute(source) {
-    if (!notebookState.runtimeReady) {
+    if (!this.pyodide || !notebookState.runtimeReady) {
       throw new Error(
-        "Runtime is not initialized. The Python/WASM payload still needs to be embedded.",
+        "Runtime is not initialized. Click 'Initialize Runtime' before running cells.",
       );
     }
 
-    return [
-      "Execution adapter placeholder",
-      "",
-      "The notebook shell is live, but Python execution is not yet connected.",
-      "Next step: embed the offline WebAssembly runtime and route cell code into it.",
-      "",
-      "Submitted source:",
-      source,
-    ].join("\n");
+    const stdout = [];
+    const stderr = [];
+    this.pyodide.setStdout({
+      batched: (line) => stdout.push(line),
+    });
+    this.pyodide.setStderr({
+      batched: (line) => stderr.push(line),
+    });
+
+    let result;
+    try {
+      result = await this.pyodide.runPythonAsync(source);
+    } finally {
+      this.pyodide.setStdout({ batched: () => {} });
+      this.pyodide.setStderr({ batched: () => {} });
+    }
+
+    const parts = [];
+    if (stdout.length) {
+      parts.push(stdout.join("\n"));
+    }
+    if (result !== undefined && result !== null) {
+      parts.push(stringifyPyodideResult(result));
+    }
+    if (stderr.length) {
+      parts.push(stderr.join("\n"));
+    }
+
+    return parts.join("\n").trim() || "Execution completed with no textual output.";
   },
 };
+
+function stringifyPyodideResult(result) {
+  try {
+    return String(result);
+  } finally {
+    if (result && typeof result.destroy === "function") {
+      result.destroy();
+    }
+  }
+}
+
+function installPyodideAssetFetch() {
+  if (!EMBEDDED_PYODIDE.available || globalThis.__pyWholePyodideFetchInstalled) {
+    return;
+  }
+
+  const originalFetch = globalThis.fetch.bind(globalThis);
+  const assetCache = new Map();
+  const base = EMBEDDED_PYODIDE.indexURL;
+
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input.url;
+    if (typeof url === "string" && url.startsWith(base)) {
+      return serveEmbeddedPyodideAsset(url, assetCache);
+    }
+    return originalFetch(input, init);
+  };
+
+  globalThis.__pyWholePyodideFetchInstalled = true;
+}
+
+function serveEmbeddedPyodideAsset(url, assetCache) {
+  const headers = new Headers();
+  if (url.endsWith("pyodide.asm.wasm")) {
+    headers.set("Content-Type", "application/wasm");
+    return Promise.resolve(
+      new Response(decodeBase64Asset("wasm", EMBEDDED_PYODIDE.assets.wasmBase64, assetCache), {
+        headers,
+      }),
+    );
+  }
+  if (url.endsWith("python_stdlib.zip")) {
+    headers.set("Content-Type", "application/zip");
+    return Promise.resolve(
+      new Response(
+        decodeBase64Asset("stdlib", EMBEDDED_PYODIDE.assets.stdlibBase64, assetCache),
+        { headers },
+      ),
+    );
+  }
+  if (url.endsWith("pyodide-lock.json")) {
+    headers.set("Content-Type", "application/json");
+    return Promise.resolve(new Response(EMBEDDED_PYODIDE.assets.lockFileText, { headers }));
+  }
+  return Promise.resolve(new Response("Not found", { status: 404 }));
+}
+
+function decodeBase64Asset(cacheKey, base64, assetCache) {
+  if (assetCache.has(cacheKey)) {
+    return assetCache.get(cacheKey);
+  }
+
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  assetCache.set(cacheKey, bytes);
+  return bytes;
+}
 
 function updateKernelState(text) {
   document.getElementById("kernel-state").textContent = text;
@@ -391,7 +501,13 @@ async function runAllCells() {
 function wireEvents() {
   document
     .getElementById("initialize-runtime")
-    .addEventListener("click", () => runtimeAdapter.initialize());
+    .addEventListener("click", async () => {
+      try {
+        await runtimeAdapter.initialize();
+      } catch (error) {
+        updateKernelState(String(error.message || error));
+      }
+    });
   document
     .getElementById("restart-runtime")
     .addEventListener("click", () => runtimeAdapter.restart());
@@ -477,7 +593,9 @@ function bootstrap() {
   syncNotebookTitle();
   renderNotebook();
   wireEvents();
-  updateKernelState("Awaiting runtime bundle");
+  updateKernelState(
+    EMBEDDED_PYODIDE.available ? "Embedded runtime ready to initialize" : "Runtime bundle missing",
+  );
 }
 
 bootstrap();
