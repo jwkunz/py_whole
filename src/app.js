@@ -19,6 +19,7 @@ const SCIENTIFIC_PACKAGES = [
 const notebookState = {
   runtimeReady: false,
   saveState: "Unsaved",
+  focusedCellId: null,
   selectedVariableName: "",
   terminalEntries: [],
   watches: [],
@@ -693,6 +694,13 @@ function canRunCell(cellId) {
     return true;
   }
   return notebookState.execution.currentCellId === cellId;
+}
+
+function focusCellEditor(cellId) {
+  const editor = document.querySelector(`.cell[data-cell-id="${cellId}"] .cell-editor`);
+  if (editor) {
+    editor.focus();
+  }
 }
 
 function createNotebookRecord(title = "Untitled") {
@@ -1759,6 +1767,22 @@ function renderNotebook() {
       editor.disabled = notebookState.execution.busy;
       moveUpButton.addEventListener("click", () => moveCell(cell.id, -1));
       moveDownButton.addEventListener("click", () => moveCell(cell.id, 1));
+      editor.addEventListener("focus", () => {
+        notebookState.focusedCellId = cell.id;
+      });
+      editor.addEventListener("keydown", (event) => {
+        if (cell.cellType !== "code") {
+          return;
+        }
+        if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+          event.preventDefault();
+          if (event.shiftKey) {
+            void runCellAndAdvance(cell.id);
+          } else {
+            void runCell(cell.id);
+          }
+        }
+      });
       editor.addEventListener("input", (event) => {
         cell.source = event.target.value;
         scheduleAutosave();
@@ -1879,6 +1903,21 @@ async function runCell(cellId) {
   await refreshWatchViewer();
   endExecution();
   scheduleAutosave();
+}
+
+async function runCellAndAdvance(cellId) {
+  const notebook = activeNotebook();
+  const index = notebook ? notebook.cells.findIndex((cell) => cell.id === cellId) : -1;
+  await runCell(cellId);
+  if (!notebook || index < 0) {
+    return;
+  }
+
+  const nextCodeCell = notebook.cells.slice(index + 1).find((cell) => cell.cellType === "code");
+  if (nextCodeCell) {
+    notebookState.focusedCellId = nextCodeCell.id;
+    focusCellEditor(nextCodeCell.id);
+  }
 }
 
 async function runAllCells() {
