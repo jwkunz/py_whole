@@ -148,6 +148,12 @@ def _pywhole_capture_display(value):
             push_output({"kind": "html", "html": str(html)})
             return
 
+    if hasattr(value, "_repr_svg_"):
+        svg = value._repr_svg_()
+        if svg:
+            push_output({"kind": "svg", "svg": str(svg)})
+            return
+
     if hasattr(value, "_repr_png_"):
         png = value._repr_png_()
         if png:
@@ -170,6 +176,14 @@ def _pywhole_capture_display(value):
             if figures:
                 plt.close("all")
                 return
+        except Exception:
+            pass
+
+    if isinstance(value, (dict, list, tuple)):
+        try:
+            import json
+            push_output({"kind": "json", "data": json.dumps(value, indent=2, default=str)})
+            return
         except Exception:
             pass
 
@@ -416,8 +430,14 @@ function normalizeDisplayOutputs(items) {
       if (item.kind === "html") {
         return createHtmlOutput(item.html || "");
       }
+      if (item.kind === "svg") {
+        return createSvgOutput(item.svg || "");
+      }
       if (item.kind === "image") {
         return createImageOutput(item.mime || "image/png", item.data || "");
+      }
+      if (item.kind === "json") {
+        return createJsonOutput(item.data || "");
       }
       if (item.kind === "stream") {
         return createStreamOutput(item.text || "");
@@ -731,10 +751,24 @@ function createHtmlOutput(html) {
   };
 }
 
+function createSvgOutput(svg) {
+  return {
+    kind: "svg",
+    svg,
+  };
+}
+
 function createImageOutput(mime, data) {
   return {
     kind: "image",
     mime,
+    data,
+  };
+}
+
+function createJsonOutput(data) {
+  return {
+    kind: "json",
     data,
   };
 }
@@ -824,11 +858,30 @@ function serializeOutputs(outputs) {
           metadata: {},
         };
       }
+      if (output.kind === "svg") {
+        return {
+          output_type: "display_data",
+          data: {
+            "image/svg+xml": output.svg,
+          },
+          metadata: {},
+        };
+      }
       if (output.kind === "image") {
         return {
           output_type: "display_data",
           data: {
             [output.mime]: output.data,
+          },
+          metadata: {},
+        };
+      }
+      if (output.kind === "json") {
+        return {
+          output_type: "display_data",
+          data: {
+            "application/json": output.data,
+            "text/plain": output.data,
           },
           metadata: {},
         };
@@ -871,9 +924,17 @@ function parseOutputs(outputs) {
         if (html) {
           return createHtmlOutput(joinNotebookSource(html));
         }
+        const svg = output.data && output.data["image/svg+xml"];
+        if (svg) {
+          return createSvgOutput(joinNotebookSource(svg));
+        }
         const png = output.data && output.data["image/png"];
         if (png) {
           return createImageOutput("image/png", joinNotebookSource(png));
+        }
+        const json = output.data && output.data["application/json"];
+        if (json) {
+          return createJsonOutput(joinNotebookSource(json));
         }
         const plain = output.data && output.data["text/plain"];
         return plain ? createStreamOutput(joinNotebookSource(plain)) : null;
@@ -1373,6 +1434,12 @@ function renderCellOutputs(outputList, outputs) {
         html.innerHTML = output.html;
         return html;
       }
+      if (output.kind === "svg") {
+        const svg = document.createElement("div");
+        svg.className = "cell-output-svg";
+        svg.innerHTML = output.svg || "";
+        return svg;
+      }
       if (output.kind === "image") {
         const wrapper = document.createElement("div");
         wrapper.className = "cell-output-image";
@@ -1380,6 +1447,12 @@ function renderCellOutputs(outputList, outputs) {
         image.src = `data:${output.mime};base64,${output.data}`;
         wrapper.append(image);
         return wrapper;
+      }
+      if (output.kind === "json") {
+        const pre = document.createElement("pre");
+        pre.className = "cell-output-text";
+        pre.textContent = output.data || "";
+        return pre;
       }
       const pre = document.createElement("pre");
       pre.className = "cell-output-text";

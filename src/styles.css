@@ -550,6 +550,7 @@ button.danger {
 }
 
 .cell-output-html,
+.cell-output-svg,
 .cell-output-image,
 .cell-markdown-preview {
   border: 1px solid var(--border);
@@ -560,6 +561,16 @@ button.danger {
 
 .cell-output-html {
   overflow: auto;
+}
+
+.cell-output-svg {
+  overflow: auto;
+}
+
+.cell-output-svg svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 
 .cell-output-image img {
