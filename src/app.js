@@ -596,6 +596,29 @@ function isLikelyTextFile(file) {
   );
 }
 
+function isPreviewableImage(file) {
+  const type = String(file?.type || "");
+  const path = String(file?.path || file?.name || "").toLowerCase();
+  return type.startsWith("image/") || [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"].some((ext) => path.endsWith(ext));
+}
+
+function isPreviewableAudio(file) {
+  const type = String(file?.type || "");
+  const path = String(file?.path || file?.name || "").toLowerCase();
+  return type.startsWith("audio/") || [".mp3", ".wav", ".ogg", ".m4a"].some((ext) => path.endsWith(ext));
+}
+
+function isPreviewableVideo(file) {
+  const type = String(file?.type || "");
+  const path = String(file?.path || file?.name || "").toLowerCase();
+  return type.startsWith("video/") || [".mp4", ".webm", ".ogv", ".mov"].some((ext) => path.endsWith(ext));
+}
+
+function dataUrlForWorkspaceFile(file) {
+  const mime = file.type || "application/octet-stream";
+  return `data:${mime};base64,${file.base64}`;
+}
+
 function ensureParentDirectories(fsApi, absolutePath) {
   const parts = absolutePath.split("/").filter(Boolean);
   let current = "";
@@ -1220,7 +1243,12 @@ function renderWorkspaceTreeNodes(tree) {
     const item = document.createElement("div");
     item.className = "workspace-file-item";
     item.classList.toggle("is-selected", file.id === notebookState.selectedWorkspaceFileId);
-    if (isLikelyTextFile(file)) {
+    if (
+      isLikelyTextFile(file) ||
+      isPreviewableImage(file) ||
+      isPreviewableAudio(file) ||
+      isPreviewableVideo(file)
+    ) {
       item.addEventListener("click", () => selectWorkspaceFile(file.id));
     }
 
@@ -1253,11 +1281,16 @@ function renderWorkspaceTreeNodes(tree) {
       deleteWorkspaceFile(file.id);
     });
 
-    if (isLikelyTextFile(file)) {
+    if (
+      isLikelyTextFile(file) ||
+      isPreviewableImage(file) ||
+      isPreviewableAudio(file) ||
+      isPreviewableVideo(file)
+    ) {
       const editButton = document.createElement("button");
       editButton.type = "button";
       editButton.className = "secondary";
-      editButton.textContent = "Edit";
+      editButton.textContent = isLikelyTextFile(file) ? "Open" : "Preview";
       editButton.addEventListener("click", (event) => {
         event.stopPropagation();
         selectWorkspaceFile(file.id);
@@ -1277,6 +1310,7 @@ function selectedWorkspaceFile() {
 
 function renderWorkspaceFileEditor() {
   const meta = document.getElementById("workspace-file-editor-meta");
+  const preview = document.getElementById("workspace-file-preview");
   const editor = document.getElementById("workspace-file-editor");
   const saveButton = document.getElementById("save-workspace-file");
   const revertButton = document.getElementById("revert-workspace-file");
@@ -1284,15 +1318,7 @@ function renderWorkspaceFileEditor() {
 
   if (!file) {
     meta.textContent = "Select a text file to edit it.";
-    editor.value = "";
-    editor.disabled = true;
-    saveButton.disabled = true;
-    revertButton.disabled = true;
-    return;
-  }
-
-  if (!isLikelyTextFile(file)) {
-    meta.textContent = `${file.path || file.name} is not editable as text.`;
+    preview.replaceChildren();
     editor.value = "";
     editor.disabled = true;
     saveButton.disabled = true;
@@ -1301,20 +1327,81 @@ function renderWorkspaceFileEditor() {
   }
 
   meta.textContent = `${file.path || file.name} • ${formatBytes(file.size)}`;
-  editor.value = notebookState.workspaceFileDraft;
-  editor.disabled = notebookState.execution.busy;
-  saveButton.disabled = notebookState.execution.busy;
-  revertButton.disabled = notebookState.execution.busy;
+  preview.replaceChildren(...buildWorkspaceFilePreviewNodes(file));
+
+  if (isLikelyTextFile(file)) {
+    editor.value = notebookState.workspaceFileDraft;
+    editor.disabled = notebookState.execution.busy;
+    saveButton.disabled = notebookState.execution.busy;
+    revertButton.disabled = notebookState.execution.busy;
+    return;
+  }
+
+  editor.value = "";
+  editor.disabled = true;
+  saveButton.disabled = true;
+  revertButton.disabled = true;
 }
 
 function selectWorkspaceFile(fileId) {
   const file = notebookState.workspace.files.find((entry) => entry.id === fileId);
-  if (!file || !isLikelyTextFile(file)) {
+  if (!file) {
     return;
   }
   notebookState.selectedWorkspaceFileId = file.id;
-  notebookState.workspaceFileDraft = decodeBase64ToText(file.base64);
+  notebookState.workspaceFileDraft = isLikelyTextFile(file) ? decodeBase64ToText(file.base64) : "";
   renderWorkspaceFiles();
+}
+
+function buildWorkspaceFilePreviewNodes(file) {
+  const nodes = [];
+
+  const metaCard = document.createElement("div");
+  metaCard.className = "workspace-file-preview-card";
+  const metaPre = document.createElement("pre");
+  metaPre.textContent = [
+    `Path: ${file.path || file.name}`,
+    `Type: ${file.type || "application/octet-stream"}`,
+    `Size: ${formatBytes(file.size)}`,
+    `Updated: ${new Date(file.updatedAt).toLocaleString()}`,
+  ].join("\n");
+  metaCard.append(metaPre);
+  nodes.push(metaCard);
+
+  if (isPreviewableImage(file)) {
+    const card = document.createElement("div");
+    card.className = "workspace-file-preview-card";
+    const image = document.createElement("img");
+    image.src = dataUrlForWorkspaceFile(file);
+    image.alt = file.name;
+    card.append(image);
+    nodes.push(card);
+    return nodes;
+  }
+
+  if (isPreviewableAudio(file)) {
+    const card = document.createElement("div");
+    card.className = "workspace-file-preview-card";
+    const audio = document.createElement("audio");
+    audio.controls = true;
+    audio.src = dataUrlForWorkspaceFile(file);
+    card.append(audio);
+    nodes.push(card);
+    return nodes;
+  }
+
+  if (isPreviewableVideo(file)) {
+    const card = document.createElement("div");
+    card.className = "workspace-file-preview-card";
+    const video = document.createElement("video");
+    video.controls = true;
+    video.src = dataUrlForWorkspaceFile(file);
+    card.append(video);
+    nodes.push(card);
+    return nodes;
+  }
+
+  return nodes;
 }
 
 function renderVariableViewer(variables) {
@@ -2295,7 +2382,7 @@ async function importWorkspaceFiles(event) {
     return;
   }
 
-  let lastImportedEditableFileId = null;
+  let lastImportedOpenableFileId = null;
   for (const file of files) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const relativePath = normalizeWorkspacePath(file.webkitRelativePath || file.name);
@@ -2303,8 +2390,13 @@ async function importWorkspaceFiles(event) {
       (entry) => (entry.path || entry.name) === relativePath,
     );
     const record = createWorkspaceFile(relativePath, bytes, file.type || "application/octet-stream");
-    if (isLikelyTextFile(record)) {
-      lastImportedEditableFileId = record.id;
+    if (
+      isLikelyTextFile(record) ||
+      isPreviewableImage(record) ||
+      isPreviewableAudio(record) ||
+      isPreviewableVideo(record)
+    ) {
+      lastImportedOpenableFileId = record.id;
     }
     if (existingIndex >= 0) {
       notebookState.workspace.files.splice(existingIndex, 1, record);
@@ -2317,8 +2409,8 @@ async function importWorkspaceFiles(event) {
     await runtimeAdapter.syncWorkspaceFiles();
   }
 
-  if (lastImportedEditableFileId) {
-    selectWorkspaceFile(lastImportedEditableFileId);
+  if (lastImportedOpenableFileId) {
+    selectWorkspaceFile(lastImportedOpenableFileId);
   }
   renderNotebook();
   scheduleAutosave();

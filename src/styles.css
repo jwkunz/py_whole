@@ -396,6 +396,38 @@ button.danger {
   min-height: 220px;
 }
 
+.workspace-file-preview {
+  display: grid;
+  gap: 0.7rem;
+  margin-bottom: 0.8rem;
+}
+
+.workspace-file-preview-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.9rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.workspace-file-preview-card img,
+.workspace-file-preview-card video {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.workspace-file-preview-card audio {
+  width: 100%;
+}
+
+.workspace-file-preview-card pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--mono);
+}
+
 .workspace-item-title {
   display: block;
   font-weight: 700;
