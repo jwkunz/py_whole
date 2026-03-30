@@ -20,6 +20,12 @@ const notebookState = {
   runtimeReady: false,
   saveState: "Unsaved",
   watches: [],
+  execution: {
+    busy: false,
+    currentCellId: null,
+    runAll: false,
+    interruptRequested: false,
+  },
   workspace: {
     activeNotebookId: null,
     files: [],
@@ -41,6 +47,7 @@ const runtimeAdapter = {
     if (this.pyodide) {
       notebookState.runtimeReady = true;
       updateKernelState("Runtime ready");
+      syncExecutionUi();
       return;
     }
 
@@ -67,6 +74,7 @@ const runtimeAdapter = {
     updateKernelState(
       `Runtime ready (Pyodide ${EMBEDDED_PYODIDE.version}, ${EMBEDDED_PYODIDE.bundledPackages?.length || 0} bundled packages)`,
     );
+    syncExecutionUi();
   },
 
   async restart() {
@@ -455,6 +463,117 @@ function updateSaveState(text) {
   document.getElementById("save-state").textContent = text;
 }
 
+function executionStatusText() {
+  const { busy, currentCellId, runAll } = notebookState.execution;
+  if (!busy) {
+    return "Idle";
+  }
+  if (runAll) {
+    return currentCellId ? `Running all cells (active cell ${currentCellId})` : "Running all cells";
+  }
+  return currentCellId ? `Running cell ${currentCellId}` : "Running";
+}
+
+function interruptStatusText() {
+  if (!notebookState.execution.busy) {
+    return "Not requested";
+  }
+  return notebookState.execution.interruptRequested
+    ? "Requested; stops after current cell"
+    : "Available between cell boundaries";
+}
+
+function syncExecutionUi() {
+  const { busy, currentCellId, interruptRequested } = notebookState.execution;
+  const executionText = executionStatusText();
+  const canInterrupt = busy && !interruptRequested;
+
+  document.getElementById("execution-state").textContent = executionText;
+  document.getElementById("interrupt-state").textContent = interruptStatusText();
+  document.getElementById("run-state").textContent = executionText;
+
+  document.querySelector(".app-shell")?.classList.toggle("is-busy", busy);
+
+  const interruptButtons = [
+    document.getElementById("interrupt-runtime"),
+    document.getElementById("interrupt-run"),
+  ];
+
+  for (const button of interruptButtons) {
+    if (button) {
+      button.disabled = !canInterrupt;
+    }
+  }
+
+  for (const control of [
+    document.getElementById("run-all"),
+    document.getElementById("add-code-cell"),
+    document.getElementById("add-markdown-cell"),
+    document.getElementById("new-notebook-sidebar"),
+    document.getElementById("delete-notebook"),
+    document.getElementById("import-notebook"),
+    document.getElementById("export-notebook"),
+    document.getElementById("import-file"),
+    document.getElementById("new-folder"),
+    document.getElementById("clear-recovery"),
+    document.getElementById("add-watch"),
+    document.getElementById("notebook-title-input"),
+  ]) {
+    if (control) {
+      control.disabled = busy;
+    }
+  }
+
+  const initButton = document.getElementById("initialize-runtime");
+  if (initButton) {
+    initButton.disabled = busy || notebookState.runtimeReady;
+  }
+
+  document.querySelectorAll(".workspace-item").forEach((item) => {
+    item.classList.toggle("is-busy", busy);
+  });
+  document.querySelectorAll(".cell").forEach((cellNode) => {
+    const cellId = Number(cellNode.dataset.cellId);
+    cellNode.classList.toggle("is-running", busy && currentCellId === cellId);
+    cellNode.classList.toggle(
+      "is-interrupt-pending",
+      busy && currentCellId === cellId && interruptRequested,
+    );
+  });
+}
+
+function beginExecution(cellId, options = {}) {
+  notebookState.execution.busy = true;
+  notebookState.execution.currentCellId = cellId;
+  notebookState.execution.runAll = Boolean(options.runAll);
+  notebookState.execution.interruptRequested = false;
+  syncExecutionUi();
+}
+
+function endExecution() {
+  notebookState.execution.busy = false;
+  notebookState.execution.currentCellId = null;
+  notebookState.execution.runAll = false;
+  notebookState.execution.interruptRequested = false;
+  syncExecutionUi();
+}
+
+function requestInterrupt() {
+  if (!notebookState.execution.busy || notebookState.execution.interruptRequested) {
+    return;
+  }
+  notebookState.execution.interruptRequested = true;
+  updateKernelState("Interrupt requested. Current cell will finish before execution stops.");
+  syncExecutionUi();
+}
+
+function canRunCell(cellId) {
+  if (!notebookState.execution.busy) {
+    return true;
+  }
+  return notebookState.execution.currentCellId === cellId;
+}
+
 function createNotebookRecord(title = "Untitled") {
   return {
     id: `nb-${crypto.randomUUID()}`,
@@ -806,6 +925,7 @@ function renderWorkspaceList() {
       meta.className = "workspace-item-meta";
       meta.textContent = new Date(notebook.updatedAt).toLocaleString();
 
+      button.disabled = notebookState.execution.busy;
       button.append(title, meta);
       return button;
     }),
@@ -1236,6 +1356,16 @@ function renderNotebook() {
       const moveDownButton = fragment.querySelector(".move-down");
 
       article.dataset.cellId = String(cell.id);
+      article.classList.toggle(
+        "is-running",
+        notebookState.execution.busy && notebookState.execution.currentCellId === cell.id,
+      );
+      article.classList.toggle(
+        "is-interrupt-pending",
+        notebookState.execution.busy &&
+          notebookState.execution.currentCellId === cell.id &&
+          notebookState.execution.interruptRequested,
+      );
       kindNode.textContent = cell.cellType === "markdown" ? "Markdown" : "Code";
       statusNode.textContent = cell.status;
       editorModeLabel.textContent = cell.cellType === "markdown" ? "Markdown" : "Python";
@@ -1251,7 +1381,12 @@ function renderNotebook() {
       deleteButton.addEventListener("click", () => deleteCell(cell.id));
       moveUpButton.disabled = index === 0;
       moveDownButton.disabled = index === notebook.cells.length - 1;
-      runButton.disabled = cell.cellType !== "code";
+      runButton.disabled = cell.cellType !== "code" || !canRunCell(cell.id);
+      toggleKindButton.disabled = notebookState.execution.busy;
+      deleteButton.disabled = notebookState.execution.busy;
+      moveUpButton.disabled = moveUpButton.disabled || notebookState.execution.busy;
+      moveDownButton.disabled = moveDownButton.disabled || notebookState.execution.busy;
+      editor.disabled = notebookState.execution.busy;
       moveUpButton.addEventListener("click", () => moveCell(cell.id, -1));
       moveDownButton.addEventListener("click", () => moveCell(cell.id, 1));
       editor.addEventListener("input", (event) => {
@@ -1262,6 +1397,7 @@ function renderNotebook() {
       return fragment;
     }),
   );
+  syncExecutionUi();
 }
 
 function addCodeCell() {
@@ -1344,7 +1480,13 @@ async function runCell(cellId) {
   if (!cell || cell.cellType !== "code") {
     return;
   }
+  if (notebookState.execution.busy && notebookState.execution.currentCellId !== cellId) {
+    updateKernelState("A cell is already running.");
+    return;
+  }
 
+  beginExecution(cell.id, { runAll: false });
+  updateKernelState(`Running cell ${cell.id}`);
   cell.status = "Running";
   cell.outputs = [createStreamOutput("Executing...")];
   renderNotebook();
@@ -1354,26 +1496,66 @@ async function runCell(cellId) {
     cell.outputs = outputs;
     cell.executionCount = (cell.executionCount || 0) + 1;
     cell.status = "Complete";
+    updateKernelState("Runtime ready");
   } catch (error) {
     cell.outputs = [createStreamOutput(String(error.message || error))];
     cell.status = "Error";
+    updateKernelState(`Execution error: ${String(error.message || error)}`);
   }
 
   notebook.updatedAt = new Date().toISOString();
   renderNotebook();
   await refreshVariableViewer();
   await refreshWatchViewer();
+  endExecution();
   scheduleAutosave();
 }
 
 async function runAllCells() {
   const notebook = activeNotebook();
-  if (!notebook) {
+  if (!notebook || notebookState.execution.busy) {
     return;
   }
   for (const cell of notebook.cells) {
-    await runCell(cell.id);
+    if (cell.cellType !== "code") {
+      continue;
+    }
+
+    beginExecution(cell.id, { runAll: true });
+    updateKernelState(`Running all cells (active cell ${cell.id})`);
+    cell.status = "Running";
+    cell.outputs = [createStreamOutput("Executing...")];
+    renderNotebook();
+
+    try {
+      const outputs = await runtimeAdapter.execute(cell.source);
+      cell.outputs = outputs;
+      cell.executionCount = (cell.executionCount || 0) + 1;
+      cell.status = "Complete";
+    } catch (error) {
+      cell.outputs = [createStreamOutput(String(error.message || error))];
+      cell.status = "Error";
+      updateKernelState(`Execution error: ${String(error.message || error)}`);
+    }
+
+    notebook.updatedAt = new Date().toISOString();
+    renderNotebook();
+    await refreshVariableViewer();
+    await refreshWatchViewer();
+
+    if (notebookState.execution.interruptRequested) {
+      endExecution();
+      updateKernelState("Run all interrupted after the current cell completed.");
+      renderNotebook();
+      scheduleAutosave();
+      return;
+    }
   }
+
+  endExecution();
+  updateKernelState("Runtime ready");
+  renderNotebook();
+  scheduleAutosave();
 }
 
 function wireEvents() {
@@ -1389,6 +1571,12 @@ function wireEvents() {
   document
     .getElementById("restart-runtime")
     .addEventListener("click", () => runtimeAdapter.restart());
+  document
+    .getElementById("interrupt-runtime")
+    .addEventListener("click", requestInterrupt);
+  document
+    .getElementById("interrupt-run")
+    .addEventListener("click", requestInterrupt);
   document
     .getElementById("add-code-cell")
     .addEventListener("click", addCodeCell);
@@ -1621,6 +1809,7 @@ function bootstrap() {
   updateKernelState(
     EMBEDDED_PYODIDE.available ? "Embedded runtime ready to initialize" : "Runtime bundle missing",
   );
+  syncExecutionUi();
 }
 
 bootstrap();

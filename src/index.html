@@ -30,6 +30,14 @@ __INLINE_CSS__
               <dd id="kernel-state">Uninitialized</dd>
             </div>
             <div>
+              <dt>Execution</dt>
+              <dd id="execution-state">Idle</dd>
+            </div>
+            <div>
+              <dt>Interrupt</dt>
+              <dd id="interrupt-state">Not requested</dd>
+            </div>
+            <div>
               <dt>Mode</dt>
               <dd>Single notebook</dd>
             </div>
@@ -41,6 +49,7 @@ __INLINE_CSS__
           <div class="button-row">
             <button id="initialize-runtime">Initialize Runtime</button>
             <button id="restart-runtime" class="secondary">Restart</button>
+            <button id="interrupt-runtime" class="secondary">Interrupt</button>
           </div>
         </section>
 
@@ -86,9 +95,9 @@ __INLINE_CSS__
         <section class="panel">
           <h2>Help</h2>
           <p class="panel-copy">
-            This first implementation establishes the notebook shell,
-            build pipeline, and runtime adapter seam. The Python/WASM
-            payload still needs to be embedded in a later step.
+            Runtime execution is fully local. Interrupt requests stop
+            queued execution after the current cell finishes because the
+            embedded Pyodide runtime is executing in-page.
           </p>
         </section>
       </aside>
@@ -112,6 +121,7 @@ __INLINE_CSS__
             <button id="import-notebook" class="secondary">Import .ipynb</button>
             <button id="export-notebook" class="secondary">Export .ipynb</button>
             <button id="add-code-cell">Add Code Cell</button>
+            <button id="interrupt-run" class="secondary">Interrupt</button>
             <button id="run-all" class="secondary">Run All</button>
           </div>
         </header>
@@ -128,6 +138,10 @@ __INLINE_CSS__
           <div class="meta-card">
             <span class="meta-label">Output</span>
             <span class="meta-value">Text-ready cell output area</span>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label">Run State</span>
+            <span class="meta-value" id="run-state">Idle</span>
           </div>
           <div class="meta-card">
             <span class="meta-label">Persistence</span>
