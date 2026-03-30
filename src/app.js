@@ -21,6 +21,8 @@ const notebookState = {
   saveState: "Unsaved",
   focusedCellId: null,
   selectedVariableName: "",
+  selectedWorkspaceFileId: null,
+  workspaceFileDraft: "",
   terminalEntries: [],
   watches: [],
   execution: {
@@ -545,6 +547,14 @@ function decodeBase64ToUint8Array(base64) {
   return bytes;
 }
 
+function decodeBase64ToText(base64) {
+  return new TextDecoder().decode(decodeBase64ToUint8Array(base64));
+}
+
+function encodeTextToBase64(text) {
+  return encodeUint8ArrayToBase64(new TextEncoder().encode(String(text || "")));
+}
+
 function normalizeWorkspacePath(path) {
   return String(path || "")
     .replaceAll("\\", "/")
@@ -557,6 +567,33 @@ function normalizeWorkspacePath(path) {
 function basename(path) {
   const parts = normalizeWorkspacePath(path).split("/");
   return parts[parts.length - 1] || "";
+}
+
+function isLikelyTextFile(file) {
+  const type = String(file?.type || "");
+  const path = String(file?.path || file?.name || "").toLowerCase();
+  return (
+    type.startsWith("text/") ||
+    [
+      ".txt",
+      ".csv",
+      ".tsv",
+      ".json",
+      ".md",
+      ".py",
+      ".js",
+      ".mjs",
+      ".css",
+      ".html",
+      ".xml",
+      ".yaml",
+      ".yml",
+      ".toml",
+      ".ini",
+      ".cfg",
+      ".ipynb",
+    ].some((extension) => path.endsWith(extension))
+  );
 }
 
 function ensureParentDirectories(fsApi, absolutePath) {
@@ -662,6 +699,7 @@ function syncExecutionUi() {
       busy && currentCellId === cellId && interruptRequested,
     );
   });
+  renderWorkspaceFileEditor();
 }
 
 function beginExecution(cellId, options = {}) {
@@ -1106,15 +1144,27 @@ function renderWorkspaceFiles() {
   const list = document.getElementById("workspace-files");
   const files = notebookState.workspace.files || [];
   if (!files.length) {
+    notebookState.selectedWorkspaceFileId = null;
+    notebookState.workspaceFileDraft = "";
     const empty = document.createElement("div");
     empty.className = "workspace-file-item";
     empty.textContent = "No imported files yet.";
     list.replaceChildren(empty);
+    renderWorkspaceFileEditor();
     return;
+  }
+
+  if (
+    notebookState.selectedWorkspaceFileId &&
+    !files.some((file) => file.id === notebookState.selectedWorkspaceFileId)
+  ) {
+    notebookState.selectedWorkspaceFileId = null;
+    notebookState.workspaceFileDraft = "";
   }
 
   const tree = buildWorkspaceTree(files);
   list.replaceChildren(...renderWorkspaceTreeNodes(tree));
+  renderWorkspaceFileEditor();
 }
 
 function formatBytes(size) {
@@ -1169,6 +1219,7 @@ function renderWorkspaceTreeNodes(tree) {
     const file = entry.file;
     const item = document.createElement("div");
     item.className = "workspace-file-item";
+    item.classList.toggle("is-selected", file.id === notebookState.selectedWorkspaceFileId);
 
     const title = document.createElement("span");
     title.className = "workspace-item-title";
@@ -1193,10 +1244,65 @@ function renderWorkspaceTreeNodes(tree) {
     deleteButton.textContent = "Delete";
     deleteButton.addEventListener("click", () => deleteWorkspaceFile(file.id));
 
+    if (isLikelyTextFile(file)) {
+      const editButton = document.createElement("button");
+      editButton.type = "button";
+      editButton.className = "secondary";
+      editButton.textContent = "Edit";
+      editButton.addEventListener("click", () => selectWorkspaceFile(file.id));
+      actions.append(editButton);
+    }
+
     actions.append(exportButton, deleteButton);
     item.append(title, meta, actions);
     return item;
   });
+}
+
+function selectedWorkspaceFile() {
+  return notebookState.workspace.files.find((file) => file.id === notebookState.selectedWorkspaceFileId);
+}
+
+function renderWorkspaceFileEditor() {
+  const meta = document.getElementById("workspace-file-editor-meta");
+  const editor = document.getElementById("workspace-file-editor");
+  const saveButton = document.getElementById("save-workspace-file");
+  const revertButton = document.getElementById("revert-workspace-file");
+  const file = selectedWorkspaceFile();
+
+  if (!file) {
+    meta.textContent = "Select a text file to edit it.";
+    editor.value = "";
+    editor.disabled = true;
+    saveButton.disabled = true;
+    revertButton.disabled = true;
+    return;
+  }
+
+  if (!isLikelyTextFile(file)) {
+    meta.textContent = `${file.path || file.name} is not editable as text.`;
+    editor.value = "";
+    editor.disabled = true;
+    saveButton.disabled = true;
+    revertButton.disabled = true;
+    return;
+  }
+
+  meta.textContent = `${file.path || file.name} • ${formatBytes(file.size)}`;
+  editor.value = notebookState.workspaceFileDraft;
+  editor.disabled = notebookState.execution.busy;
+  saveButton.disabled = notebookState.execution.busy;
+  revertButton.disabled = notebookState.execution.busy;
+}
+
+function selectWorkspaceFile(fileId) {
+  const file = notebookState.workspace.files.find((entry) => entry.id === fileId);
+  if (!file || !isLikelyTextFile(file)) {
+    return;
+  }
+  notebookState.selectedWorkspaceFileId = file.id;
+  notebookState.workspaceFileDraft = decodeBase64ToText(file.base64);
+  renderWorkspaceFiles();
 }
 
 function renderVariableViewer(variables) {
@@ -2057,6 +2163,19 @@ function wireEvents() {
   document
     .getElementById("workspace-file-input")
     .addEventListener("change", importWorkspaceFiles);
+  document
+    .getElementById("workspace-file-editor")
+    .addEventListener("input", (event) => {
+      notebookState.workspaceFileDraft = event.target.value;
+    });
+  document
+    .getElementById("save-workspace-file")
+    .addEventListener("click", () => {
+      void saveSelectedWorkspaceFile();
+    });
+  document
+    .getElementById("revert-workspace-file")
+    .addEventListener("click", revertSelectedWorkspaceFile);
 }
 
 function createNewNotebook() {
@@ -2066,6 +2185,40 @@ function createNewNotebook() {
   syncNotebookTitle();
   renderNotebook();
   scheduleAutosave();
+}
+
+async function saveSelectedWorkspaceFile() {
+  const file = selectedWorkspaceFile();
+  if (!file || !isLikelyTextFile(file)) {
+    return;
+  }
+
+  file.base64 = encodeTextToBase64(notebookState.workspaceFileDraft);
+  file.size = new TextEncoder().encode(notebookState.workspaceFileDraft).length;
+  file.updatedAt = new Date().toISOString();
+
+  if (runtimeAdapter.pyodide) {
+    const bytes = decodeBase64ToUint8Array(file.base64);
+    const absolutePath = `/workspace/${file.path || file.name}`;
+    ensureParentDirectories(runtimeAdapter.pyodide.FS, absolutePath);
+    try {
+      runtimeAdapter.pyodide.FS.unlink(absolutePath);
+    } catch (_error) {
+    }
+    runtimeAdapter.pyodide.FS.writeFile(absolutePath, bytes);
+  }
+
+  renderWorkspaceFiles();
+  scheduleAutosave();
+}
+
+function revertSelectedWorkspaceFile() {
+  const file = selectedWorkspaceFile();
+  if (!file || !isLikelyTextFile(file)) {
+    return;
+  }
+  notebookState.workspaceFileDraft = decodeBase64ToText(file.base64);
+  renderWorkspaceFileEditor();
 }
 
 function switchNotebook(notebookId) {
@@ -2229,6 +2382,7 @@ function bootstrap() {
   renderVariableViewer([]);
   renderVariableDetail(null);
   renderWatchViewer([]);
+  renderWorkspaceFileEditor();
   renderTerminalOutput();
   wireEvents();
   updateKernelState(

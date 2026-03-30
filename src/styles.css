@@ -219,6 +219,11 @@ button.danger {
   background: rgba(255, 255, 255, 0.02);
 }
 
+.workspace-file-item.is-selected {
+  border-color: rgba(93, 228, 199, 0.4);
+  background: rgba(93, 228, 199, 0.08);
+}
+
 .workspace-directory {
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -385,6 +390,10 @@ button.danger {
 .workspace-file-actions button {
   padding: 0.45rem 0.8rem;
   font-size: 0.85rem;
+}
+
+.workspace-file-editor {
+  min-height: 220px;
 }
 
 .workspace-item-title {
