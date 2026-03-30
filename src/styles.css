@@ -177,7 +177,7 @@ button.danger {
   gap: 0.55rem;
 }
 
-.workspace-file-list {
+.workspace-tree {
   margin-top: 1rem;
   display: grid;
   gap: 0.55rem;
@@ -203,6 +203,25 @@ button.danger {
   border-radius: 14px;
   padding: 0.8rem 0.9rem;
   background: rgba(255, 255, 255, 0.02);
+}
+
+.workspace-directory {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.8rem 0.9rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.workspace-directory-title {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 0.55rem;
+}
+
+.workspace-directory-children {
+  display: grid;
+  gap: 0.5rem;
+  margin-left: 0.75rem;
 }
 
 .workspace-file-actions {

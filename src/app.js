@@ -210,7 +210,8 @@ def _pywhole_run_cell(source):
     this.pyodide.FS.mkdirTree("/workspace");
     for (const file of files) {
       const bytes = decodeBase64ToUint8Array(file.base64);
-      const path = `/workspace/${file.name}`;
+      const path = `/workspace/${file.path || file.name}`;
+      ensureParentDirectories(this.pyodide.FS, path);
       try {
         this.pyodide.FS.unlink(path);
       } catch (_error) {
@@ -331,6 +332,32 @@ function decodeBase64ToUint8Array(base64) {
   return bytes;
 }
 
+function normalizeWorkspacePath(path) {
+  return String(path || "")
+    .replaceAll("\\", "/")
+    .replace(/^\/+/, "")
+    .split("/")
+    .filter(Boolean)
+    .join("/");
+}
+
+function basename(path) {
+  const parts = normalizeWorkspacePath(path).split("/");
+  return parts[parts.length - 1] || "";
+}
+
+function ensureParentDirectories(fsApi, absolutePath) {
+  const parts = absolutePath.split("/").filter(Boolean);
+  let current = "";
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    current += `/${parts[index]}`;
+    try {
+      fsApi.mkdir(current);
+    } catch (_error) {
+    }
+  }
+}
+
 function updateKernelState(text) {
   document.getElementById("kernel-state").textContent = text;
 }
@@ -350,9 +377,11 @@ function createNotebookRecord(title = "Untitled") {
 }
 
 function createWorkspaceFile(name, bytes, type = "application/octet-stream") {
+  const normalizedPath = normalizeWorkspacePath(name);
   return {
     id: `file-${crypto.randomUUID()}`,
-    name,
+    name: basename(normalizedPath),
+    path: normalizedPath,
     type,
     size: bytes.length,
     updatedAt: new Date().toISOString(),
@@ -704,39 +733,8 @@ function renderWorkspaceFiles() {
     return;
   }
 
-  list.replaceChildren(
-    ...files.map((file) => {
-      const item = document.createElement("div");
-      item.className = "workspace-file-item";
-
-      const title = document.createElement("span");
-      title.className = "workspace-item-title";
-      title.textContent = file.name;
-
-      const meta = document.createElement("span");
-      meta.className = "workspace-item-meta";
-      meta.textContent = `${formatBytes(file.size)} • ${new Date(file.updatedAt).toLocaleString()}`;
-
-      const actions = document.createElement("div");
-      actions.className = "workspace-file-actions";
-
-      const exportButton = document.createElement("button");
-      exportButton.type = "button";
-      exportButton.className = "secondary";
-      exportButton.textContent = "Export";
-      exportButton.addEventListener("click", () => exportWorkspaceFile(file.id));
-
-      const deleteButton = document.createElement("button");
-      deleteButton.type = "button";
-      deleteButton.className = "danger";
-      deleteButton.textContent = "Delete";
-      deleteButton.addEventListener("click", () => deleteWorkspaceFile(file.id));
-
-      actions.append(exportButton, deleteButton);
-      item.append(title, meta, actions);
-      return item;
-    }),
-  );
+  const tree = buildWorkspaceTree(files);
+  list.replaceChildren(...renderWorkspaceTreeNodes(tree));
 }
 
 function formatBytes(size) {
@@ -747,6 +745,78 @@ function formatBytes(size) {
     return `${(size / 1024).toFixed(1)} KB`;
   }
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function buildWorkspaceTree(files) {
+  const root = new Map();
+  for (const file of files) {
+    const parts = normalizeWorkspacePath(file.path || file.name).split("/");
+    let cursor = root;
+    for (let index = 0; index < parts.length; index += 1) {
+      const part = parts[index];
+      const isLeaf = index === parts.length - 1;
+      if (isLeaf) {
+        cursor.set(part, { type: "file", file });
+      } else {
+        if (!cursor.has(part)) {
+          cursor.set(part, { type: "directory", children: new Map() });
+        }
+        cursor = cursor.get(part).children;
+      }
+    }
+  }
+  return root;
+}
+
+function renderWorkspaceTreeNodes(tree) {
+  return Array.from(tree.entries()).map(([name, entry]) => {
+    if (entry.type === "directory") {
+      const dir = document.createElement("div");
+      dir.className = "workspace-directory";
+
+      const title = document.createElement("span");
+      title.className = "workspace-directory-title";
+      title.textContent = `${name}/`;
+
+      const children = document.createElement("div");
+      children.className = "workspace-directory-children";
+      children.replaceChildren(...renderWorkspaceTreeNodes(entry.children));
+
+      dir.append(title, children);
+      return dir;
+    }
+
+    const file = entry.file;
+    const item = document.createElement("div");
+    item.className = "workspace-file-item";
+
+    const title = document.createElement("span");
+    title.className = "workspace-item-title";
+    title.textContent = file.name;
+
+    const meta = document.createElement("span");
+    meta.className = "workspace-item-meta";
+    meta.textContent = `${file.path || file.name} • ${formatBytes(file.size)} • ${new Date(file.updatedAt).toLocaleString()}`;
+
+    const actions = document.createElement("div");
+    actions.className = "workspace-file-actions";
+
+    const exportButton = document.createElement("button");
+    exportButton.type = "button";
+    exportButton.className = "secondary";
+    exportButton.textContent = "Export";
+    exportButton.addEventListener("click", () => exportWorkspaceFile(file.id));
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "danger";
+    deleteButton.textContent = "Delete";
+    deleteButton.addEventListener("click", () => deleteWorkspaceFile(file.id));
+
+    actions.append(exportButton, deleteButton);
+    item.append(title, meta, actions);
+    return item;
+  });
 }
 
 function renderCellOutputs(outputList, outputs) {
@@ -1103,6 +1173,9 @@ function wireEvents() {
       document.getElementById("workspace-file-input").click();
     });
   document
+    .getElementById("new-folder")
+    .addEventListener("click", createWorkspaceFolder);
+  document
     .getElementById("export-notebook")
     .addEventListener("click", exportNotebook);
   document
@@ -1206,8 +1279,11 @@ async function importWorkspaceFiles(event) {
 
   for (const file of files) {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const existingIndex = notebookState.workspace.files.findIndex((entry) => entry.name === file.name);
-    const record = createWorkspaceFile(file.name, bytes, file.type || "application/octet-stream");
+    const relativePath = normalizeWorkspacePath(file.webkitRelativePath || file.name);
+    const existingIndex = notebookState.workspace.files.findIndex(
+      (entry) => (entry.path || entry.name) === relativePath,
+    );
+    const record = createWorkspaceFile(relativePath, bytes, file.type || "application/octet-stream");
     if (existingIndex >= 0) {
       notebookState.workspace.files.splice(existingIndex, 1, record);
     } else {
@@ -1235,7 +1311,7 @@ function exportWorkspaceFile(fileId) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = file.name;
+  anchor.download = file.path || file.name;
   anchor.click();
   URL.revokeObjectURL(url);
 }
@@ -1248,10 +1324,41 @@ async function deleteWorkspaceFile(fileId) {
   notebookState.workspace.files = notebookState.workspace.files.filter((entry) => entry.id !== fileId);
   if (runtimeAdapter.pyodide) {
     try {
-      runtimeAdapter.pyodide.FS.unlink(`/workspace/${file.name}`);
+      runtimeAdapter.pyodide.FS.unlink(`/workspace/${file.path || file.name}`);
     } catch (_error) {
     }
   }
+  renderNotebook();
+  scheduleAutosave();
+}
+
+function createWorkspaceFolder() {
+  const folderName = window.prompt("Folder path inside workspace:");
+  const normalizedPath = normalizeWorkspacePath(folderName || "");
+  if (!normalizedPath) {
+    return;
+  }
+
+  const placeholderPath = `${normalizedPath}/.gitkeep`;
+  const existingIndex = notebookState.workspace.files.findIndex(
+    (entry) => (entry.path || entry.name) === placeholderPath,
+  );
+  const record = createWorkspaceFile(placeholderPath, new Uint8Array(), "application/octet-stream");
+  if (existingIndex >= 0) {
+    notebookState.workspace.files.splice(existingIndex, 1, record);
+  } else {
+    notebookState.workspace.files.push(record);
+  }
+
+  if (runtimeAdapter.pyodide) {
+    const absolutePath = `/workspace/${placeholderPath}`;
+    ensureParentDirectories(runtimeAdapter.pyodide.FS, absolutePath);
+    try {
+      runtimeAdapter.pyodide.FS.writeFile(absolutePath, new Uint8Array());
+    } catch (_error) {
+    }
+  }
+
   renderNotebook();
   scheduleAutosave();
 }

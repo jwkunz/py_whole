@@ -57,8 +57,9 @@ __INLINE_CSS__
           <h2>Files</h2>
           <div class="button-row">
             <button id="import-file">Import File</button>
+            <button id="new-folder" class="secondary">New Folder</button>
           </div>
-          <div id="workspace-files" class="workspace-file-list"></div>
+          <div id="workspace-files" class="workspace-tree"></div>
         </section>
 
         <section class="panel">
@@ -185,6 +186,7 @@ __INLINE_CSS__
       class="visually-hidden"
       type="file"
       multiple
+      webkitdirectory
     />
 
     <script>
