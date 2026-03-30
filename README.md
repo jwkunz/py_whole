@@ -56,6 +56,6 @@ The current implementation now embeds the Pyodide core runtime into the generate
 
 Current limitations:
 
-- only a first bundled scientific subset is embedded so far: `numpy`, `scipy`, `pandas`, and `sympy` with required dependencies
+- the bundled scientific subset now includes `numpy`, `scipy`, `pandas`, `sympy`, and the `matplotlib` dependency chain
 - the package sidebar still includes planned packages that are not yet embedded
 - runtime restart currently reloads the page because Pyodide supports only one runtime instance per JavaScript global scope

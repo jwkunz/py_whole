@@ -73,10 +73,18 @@ function loadBundledPackages(projectRoot) {
   }
 
   const fileToPackageName = {
+    "contourpy-1.3.1-cp313-cp313-pyodide_2025_0_wasm32.whl": "contourpy",
+    "cycler-0.12.1-py3-none-any.whl": "cycler",
+    "fonttools-4.56.0-py3-none-any.whl": "fonttools",
     "libopenblas-0.3.26.zip": "libopenblas",
+    "kiwisolver-1.4.8-cp313-cp313-pyodide_2025_0_wasm32.whl": "kiwisolver",
+    "matplotlib-3.8.4-cp313-cp313-pyodide_2025_0_wasm32.whl": "matplotlib",
     "mpmath-1.3.0-py3-none-any.whl": "mpmath",
     "numpy-2.2.5-cp313-cp313-pyodide_2025_0_wasm32.whl": "numpy",
     "pandas-2.3.1-cp313-cp313-pyodide_2025_0_wasm32.whl": "pandas",
+    "packaging-24.2-py3-none-any.whl": "packaging",
+    "pillow-11.3.0-cp313-cp313-pyodide_2025_0_wasm32.whl": "pillow",
+    "pyparsing-3.2.1-py3-none-any.whl": "pyparsing",
     "python_dateutil-2.9.0.post0-py2.py3-none-any.whl": "python-dateutil",
     "pytz-2025.2-py2.py3-none-any.whl": "pytz",
     "scipy-1.14.1-cp313-cp313-pyodide_2025_0_wasm32.whl": "scipy",
