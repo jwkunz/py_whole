@@ -20,6 +20,7 @@ const notebookState = {
   runtimeReady: false,
   saveState: "Unsaved",
   selectedVariableName: "",
+  terminalEntries: [],
   watches: [],
   execution: {
     busy: false,
@@ -49,6 +50,7 @@ const runtimeAdapter = {
       notebookState.runtimeReady = true;
       updateKernelState("Runtime ready");
       syncExecutionUi();
+      renderTerminalOutput();
       return;
     }
 
@@ -76,6 +78,7 @@ const runtimeAdapter = {
       `Runtime ready (Pyodide ${EMBEDDED_PYODIDE.version}, ${EMBEDDED_PYODIDE.bundledPackages?.length || 0} bundled packages)`,
     );
     syncExecutionUi();
+    renderTerminalOutput();
   },
 
   async restart() {
@@ -581,6 +584,9 @@ function executionStatusText() {
   if (!busy) {
     return "Idle";
   }
+  if (currentCellId === "terminal") {
+    return "Running terminal command";
+  }
   if (runAll) {
     return currentCellId ? `Running all cells (active cell ${currentCellId})` : "Running all cells";
   }
@@ -631,6 +637,8 @@ function syncExecutionUi() {
     document.getElementById("clear-recovery"),
     document.getElementById("add-watch"),
     document.getElementById("notebook-title-input"),
+    document.getElementById("run-terminal-command"),
+    document.getElementById("terminal-input"),
   ]) {
     if (control) {
       control.disabled = busy;
@@ -1416,6 +1424,112 @@ async function refreshWatchViewer() {
   renderWatchViewer(results);
 }
 
+function flattenOutputsToText(outputs) {
+  return (outputs || [])
+    .map((output) => {
+      if (output.kind === "stream") {
+        return output.text || "";
+      }
+      if (output.kind === "json") {
+        return output.data || "";
+      }
+      if (output.kind === "html") {
+        return "[html output]";
+      }
+      if (output.kind === "svg") {
+        return "[svg output]";
+      }
+      if (output.kind === "image") {
+        return `[${output.mime || "image"} output]`;
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function renderTerminalOutput() {
+  const container = document.getElementById("terminal-output");
+  if (!container) {
+    return;
+  }
+
+  if (!notebookState.terminalEntries.length) {
+    const empty = document.createElement("div");
+    empty.className = "terminal-entry";
+    empty.textContent = notebookState.runtimeReady
+      ? "Run Python snippets here."
+      : "Initialize runtime to use the terminal.";
+    container.replaceChildren(empty);
+    return;
+  }
+
+  container.replaceChildren(
+    ...notebookState.terminalEntries.map((entry) => {
+      const item = document.createElement("div");
+      item.className = "terminal-entry";
+
+      const label = document.createElement("span");
+      label.className = "terminal-entry-label";
+      label.textContent = entry.label;
+
+      const body = document.createElement("pre");
+      body.className = "terminal-entry-body";
+      body.textContent = entry.text;
+
+      item.append(label, body);
+      return item;
+    }),
+  );
+  container.scrollTop = container.scrollHeight;
+}
+
+async function runTerminalCommand() {
+  const input = document.getElementById("terminal-input");
+  const source = String(input?.value || "").trim();
+  if (!source) {
+    return;
+  }
+  if (notebookState.execution.busy) {
+    return;
+  }
+
+  notebookState.terminalEntries.push({
+    label: "In",
+    text: source,
+  });
+  renderTerminalOutput();
+  beginExecution("terminal");
+  updateKernelState("Running terminal command");
+
+  try {
+    const outputs = await runtimeAdapter.execute(source);
+    notebookState.terminalEntries.push({
+      label: "Out",
+      text: flattenOutputsToText(outputs) || "Execution completed with no terminal output.",
+    });
+    updateKernelState("Runtime ready");
+    await refreshVariableViewer();
+    await refreshWatchViewer();
+  } catch (error) {
+    notebookState.terminalEntries.push({
+      label: "Error",
+      text: String(error.message || error),
+    });
+    updateKernelState(`Execution error: ${String(error.message || error)}`);
+  }
+
+  input.value = "";
+  endExecution();
+  renderNotebook();
+  renderTerminalOutput();
+}
+
+function clearTerminalOutput() {
+  notebookState.terminalEntries = [];
+  renderTerminalOutput();
+}
+
 function renderCellOutputs(outputList, outputs) {
   const items = Array.isArray(outputs) ? outputs : [];
   if (!items.length) {
@@ -1862,6 +1976,20 @@ function wireEvents() {
       scheduleAutosave();
     });
   document
+    .getElementById("run-terminal-command")
+    .addEventListener("click", runTerminalCommand);
+  document
+    .getElementById("clear-terminal-output")
+    .addEventListener("click", clearTerminalOutput);
+  document
+    .getElementById("terminal-input")
+    .addEventListener("keydown", (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault();
+        void runTerminalCommand();
+      }
+    });
+  document
     .getElementById("export-notebook")
     .addEventListener("click", exportNotebook);
   document
@@ -2062,6 +2190,7 @@ function bootstrap() {
   renderVariableViewer([]);
   renderVariableDetail(null);
   renderWatchViewer([]);
+  renderTerminalOutput();
   wireEvents();
   updateKernelState(
     EMBEDDED_PYODIDE.available ? "Embedded runtime ready to initialize" : "Runtime bundle missing",
