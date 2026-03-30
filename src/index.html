@@ -66,9 +66,21 @@ __INLINE_CSS__
         <header class="workspace-header">
           <div>
             <p class="eyebrow">Notebook</p>
-            <h2 id="notebook-title">Untitled.ipynb</h2>
+            <label class="title-label">
+              <span class="visually-hidden">Notebook title</span>
+              <input
+                id="notebook-title-input"
+                class="title-input"
+                type="text"
+                value="Untitled"
+                aria-label="Notebook title"
+              />
+            </label>
           </div>
           <div class="button-row">
+            <button id="new-notebook" class="secondary">New Notebook</button>
+            <button id="import-notebook" class="secondary">Import .ipynb</button>
+            <button id="export-notebook" class="secondary">Export .ipynb</button>
             <button id="add-code-cell">Add Code Cell</button>
             <button id="run-all" class="secondary">Run All</button>
           </div>
@@ -87,6 +99,21 @@ __INLINE_CSS__
             <span class="meta-label">Output</span>
             <span class="meta-value">Text-ready cell output area</span>
           </div>
+          <div class="meta-card">
+            <span class="meta-label">Persistence</span>
+            <span class="meta-value" id="save-state">Unsaved</span>
+          </div>
+        </section>
+
+        <section class="toolbar-panel">
+          <div class="toolbar-copy">
+            <strong>Autosave:</strong> notebooks persist in browser storage and
+            recover on reload.
+          </div>
+          <div class="button-row">
+            <button id="add-markdown-cell" class="secondary">Add Markdown Cell</button>
+            <button id="clear-recovery" class="secondary">Clear Recovery</button>
+          </div>
         </section>
 
         <section id="notebook-cells" class="cells"></section>
@@ -101,6 +128,7 @@ __INLINE_CSS__
             <span class="cell-status">Idle</span>
           </div>
           <div class="button-row">
+            <button class="toggle-kind secondary" type="button">Toggle Type</button>
             <button class="move-up secondary" type="button">Up</button>
             <button class="move-down secondary" type="button">Down</button>
             <button class="run-cell" type="button">Run</button>
@@ -108,7 +136,7 @@ __INLINE_CSS__
           </div>
         </header>
         <label class="editor-label">
-          <span>Python</span>
+          <span class="editor-mode-label">Python</span>
           <textarea
             class="cell-editor"
             spellcheck="false"
@@ -123,6 +151,13 @@ __INLINE_CSS__
         </section>
       </article>
     </template>
+
+    <input
+      id="ipynb-file-input"
+      class="visually-hidden"
+      type="file"
+      accept=".ipynb,application/json"
+    />
 
     <script>
 __INLINE_JS__

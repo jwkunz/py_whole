@@ -44,6 +44,9 @@ The current implementation provides:
 
 - a notebook-style single-page UI
 - add/run/delete/reorder code cells
+- markdown cell creation and cell type toggling
+- notebook autosave and recovery via browser storage
+- `.ipynb` import and export
 - dark-mode presentation
 - packaged scientific-library inventory in the sidebar
 - a runtime adapter seam for the future offline Python/WASM engine
