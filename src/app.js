@@ -581,6 +581,127 @@ function renderCellOutputs(outputList, outputs) {
   );
 }
 
+function renderMarkdownPreview(previewNode, source) {
+  previewNode.innerHTML = markdownToHtml(source || "");
+}
+
+function markdownToHtml(markdown) {
+  const text = String(markdown || "").replace(/\r\n/g, "\n");
+  const lines = text.split("\n");
+  const blocks = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      index += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith("```")) {
+      const fence = trimmed;
+      const codeLines = [];
+      index += 1;
+      while (index < lines.length && lines[index].trim() !== fence) {
+        codeLines.push(lines[index]);
+        index += 1;
+      }
+      if (index < lines.length) {
+        index += 1;
+      }
+      blocks.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+      continue;
+    }
+
+    const headingMatch = trimmed.match(/^(#{1,4})\s+(.*)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      blocks.push(`<h${level}>${renderInlineMarkdown(headingMatch[2])}</h${level}>`);
+      index += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith(">")) {
+      const quoteLines = [];
+      while (index < lines.length && lines[index].trim().startsWith(">")) {
+        quoteLines.push(lines[index].trim().replace(/^>\s?/, ""));
+        index += 1;
+      }
+      blocks.push(`<blockquote>${renderInlineMarkdown(quoteLines.join(" "))}</blockquote>`);
+      continue;
+    }
+
+    const unorderedMatch = trimmed.match(/^[-*]\s+(.*)$/);
+    if (unorderedMatch) {
+      const items = [];
+      while (index < lines.length) {
+        const match = lines[index].trim().match(/^[-*]\s+(.*)$/);
+        if (!match) {
+          break;
+        }
+        items.push(`<li>${renderInlineMarkdown(match[1])}</li>`);
+        index += 1;
+      }
+      blocks.push(`<ul>${items.join("")}</ul>`);
+      continue;
+    }
+
+    const orderedMatch = trimmed.match(/^\d+\.\s+(.*)$/);
+    if (orderedMatch) {
+      const items = [];
+      while (index < lines.length) {
+        const match = lines[index].trim().match(/^\d+\.\s+(.*)$/);
+        if (!match) {
+          break;
+        }
+        items.push(`<li>${renderInlineMarkdown(match[1])}</li>`);
+        index += 1;
+      }
+      blocks.push(`<ol>${items.join("")}</ol>`);
+      continue;
+    }
+
+    const paragraphLines = [];
+    while (index < lines.length && lines[index].trim()) {
+      const candidate = lines[index].trim();
+      if (
+        candidate.startsWith("```") ||
+        candidate.startsWith(">") ||
+        candidate.match(/^#{1,4}\s+/) ||
+        candidate.match(/^[-*]\s+/) ||
+        candidate.match(/^\d+\.\s+/)
+      ) {
+        break;
+      }
+      paragraphLines.push(candidate);
+      index += 1;
+    }
+    blocks.push(`<p>${renderInlineMarkdown(paragraphLines.join(" "))}</p>`);
+  }
+
+  return blocks.join("");
+}
+
+function renderInlineMarkdown(text) {
+  let html = escapeHtml(text);
+  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  return html;
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function renderNotebook() {
   const cellsRoot = document.getElementById("notebook-cells");
   const template = document.getElementById("cell-template");
@@ -593,6 +714,9 @@ function renderNotebook() {
       const statusNode = fragment.querySelector(".cell-status");
       const editorModeLabel = fragment.querySelector(".editor-mode-label");
       const editor = fragment.querySelector(".cell-editor");
+      const markdownPreviewBlock = fragment.querySelector(".markdown-preview-block");
+      const markdownPreview = fragment.querySelector(".cell-markdown-preview");
+      const outputBlock = fragment.querySelector(".output-block");
       const outputList = fragment.querySelector(".cell-output-list");
       const toggleKindButton = fragment.querySelector(".toggle-kind");
       const runButton = fragment.querySelector(".run-cell");
@@ -605,6 +729,11 @@ function renderNotebook() {
       statusNode.textContent = cell.status;
       editorModeLabel.textContent = cell.cellType === "markdown" ? "Markdown" : "Python";
       editor.value = cell.source;
+      markdownPreviewBlock.classList.toggle("is-hidden", cell.cellType !== "markdown");
+      outputBlock.classList.toggle("is-hidden", cell.cellType === "markdown");
+      if (cell.cellType === "markdown") {
+        renderMarkdownPreview(markdownPreview, cell.source);
+      }
       renderCellOutputs(outputList, cell.outputs);
       toggleKindButton.addEventListener("click", () => toggleCellType(cell.id));
       runButton.addEventListener("click", () => runCell(cell.id));

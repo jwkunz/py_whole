@@ -322,6 +322,10 @@ button.danger {
   margin-top: 1rem;
 }
 
+.markdown-preview-block {
+  margin-top: 1rem;
+}
+
 .output-header {
   margin-bottom: 0.6rem;
   color: var(--muted);
@@ -344,7 +348,8 @@ button.danger {
 }
 
 .cell-output-html,
-.cell-output-image {
+.cell-output-image,
+.cell-markdown-preview {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: rgba(4, 12, 20, 0.92);
@@ -361,6 +366,68 @@ button.danger {
   height: auto;
   border-radius: 8px;
   background: #ffffff;
+}
+
+.cell-markdown-preview {
+  line-height: 1.65;
+}
+
+.markdown-preview-block.is-hidden,
+.output-block.is-hidden {
+  display: none;
+}
+
+.cell-markdown-preview h1,
+.cell-markdown-preview h2,
+.cell-markdown-preview h3,
+.cell-markdown-preview h4 {
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.02em;
+}
+
+.cell-markdown-preview p,
+.cell-markdown-preview ul,
+.cell-markdown-preview ol,
+.cell-markdown-preview pre,
+.cell-markdown-preview blockquote {
+  margin: 0 0 1rem;
+}
+
+.cell-markdown-preview ul,
+.cell-markdown-preview ol {
+  padding-left: 1.4rem;
+}
+
+.cell-markdown-preview code {
+  font-family: var(--mono);
+  background: rgba(93, 228, 199, 0.08);
+  border: 1px solid rgba(93, 228, 199, 0.12);
+  border-radius: 6px;
+  padding: 0.1rem 0.35rem;
+}
+
+.cell-markdown-preview pre {
+  overflow: auto;
+  padding: 1rem;
+  border-radius: 12px;
+  background: rgba(2, 8, 14, 0.98);
+  border: 1px solid var(--border);
+}
+
+.cell-markdown-preview pre code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.cell-markdown-preview blockquote {
+  padding-left: 1rem;
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+}
+
+.cell-markdown-preview a {
+  color: var(--accent);
 }
 
 @media (max-width: 980px) {
