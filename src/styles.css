@@ -229,7 +229,20 @@ button.danger {
   gap: 0.55rem;
 }
 
+.watch-list {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
 .variable-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.7rem 0.8rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.watch-item {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 0.7rem 0.8rem;
@@ -250,6 +263,35 @@ button.danger {
   color: var(--muted);
   font-size: 0.84rem;
   word-break: break-word;
+}
+
+.watch-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(4, 12, 20, 0.92);
+  color: var(--text);
+  padding: 0.55rem 0.7rem;
+  font-family: var(--mono);
+}
+
+.watch-result {
+  display: block;
+  margin-top: 0.45rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+  word-break: break-word;
+}
+
+.watch-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.watch-actions button {
+  padding: 0.45rem 0.8rem;
+  font-size: 0.85rem;
 }
 
 .workspace-file-actions {
