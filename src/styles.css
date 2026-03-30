@@ -177,6 +177,12 @@ button.danger {
   gap: 0.55rem;
 }
 
+.workspace-file-list {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
 .workspace-item {
   width: 100%;
   text-align: left;
@@ -190,6 +196,24 @@ button.danger {
 .workspace-item.is-active {
   background: rgba(93, 228, 199, 0.12);
   border-color: rgba(93, 228, 199, 0.4);
+}
+
+.workspace-file-item {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.8rem 0.9rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.workspace-file-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.workspace-file-actions button {
+  padding: 0.45rem 0.8rem;
+  font-size: 0.85rem;
 }
 
 .workspace-item-title {

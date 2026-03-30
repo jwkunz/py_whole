@@ -54,6 +54,14 @@ __INLINE_CSS__
         </section>
 
         <section class="panel">
+          <h2>Files</h2>
+          <div class="button-row">
+            <button id="import-file">Import File</button>
+          </div>
+          <div id="workspace-files" class="workspace-file-list"></div>
+        </section>
+
+        <section class="panel">
           <h2>Packages</h2>
           <p class="panel-copy">
             Target scientific stack for the embedded runtime:
@@ -171,6 +179,12 @@ __INLINE_CSS__
       class="visually-hidden"
       type="file"
       accept=".ipynb,application/json"
+    />
+    <input
+      id="workspace-file-input"
+      class="visually-hidden"
+      type="file"
+      multiple
     />
 
     <script>

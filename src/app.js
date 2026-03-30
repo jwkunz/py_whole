@@ -21,6 +21,7 @@ const notebookState = {
   saveState: "Unsaved",
   workspace: {
     activeNotebookId: null,
+    files: [],
     notebooks: [],
   },
 };
@@ -59,6 +60,7 @@ const runtimeAdapter = {
       await this.pyodide.loadPackage(EMBEDDED_PYODIDE.bundledPackages);
     }
     await this.installNotebookHelpers();
+    await this.syncWorkspaceFiles();
     notebookState.runtimeReady = true;
     updateKernelState(
       `Runtime ready (Pyodide ${EMBEDDED_PYODIDE.version}, ${EMBEDDED_PYODIDE.bundledPackages?.length || 0} bundled packages)`,
@@ -198,6 +200,24 @@ def _pywhole_run_cell(source):
     _pywhole_capture_figures()
 `);
   },
+
+  async syncWorkspaceFiles() {
+    if (!this.pyodide) {
+      return;
+    }
+
+    const files = notebookState.workspace.files || [];
+    this.pyodide.FS.mkdirTree("/workspace");
+    for (const file of files) {
+      const bytes = decodeBase64ToUint8Array(file.base64);
+      const path = `/workspace/${file.name}`;
+      try {
+        this.pyodide.FS.unlink(path);
+      } catch (_error) {
+      }
+      this.pyodide.FS.writeFile(path, bytes);
+    }
+  },
 };
 
 function normalizeDisplayOutputs(items) {
@@ -294,6 +314,23 @@ function decodeBase64Asset(cacheKey, base64, assetCache) {
   return bytes;
 }
 
+function encodeUint8ArrayToBase64(bytes) {
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 1) {
+    binary += String.fromCharCode(bytes[index]);
+  }
+  return btoa(binary);
+}
+
+function decodeBase64ToUint8Array(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
 function updateKernelState(text) {
   document.getElementById("kernel-state").textContent = text;
 }
@@ -309,6 +346,17 @@ function createNotebookRecord(title = "Untitled") {
     title,
     cells: [],
     updatedAt: new Date().toISOString(),
+  };
+}
+
+function createWorkspaceFile(name, bytes, type = "application/octet-stream") {
+  return {
+    id: `file-${crypto.randomUUID()}`,
+    name,
+    type,
+    size: bytes.length,
+    updatedAt: new Date().toISOString(),
+    base64: encodeUint8ArrayToBase64(bytes),
   };
 }
 
@@ -513,6 +561,7 @@ function parseOutputs(outputs) {
 function saveNotebookToStorage() {
   const payload = {
     activeNotebookId: notebookState.workspace.activeNotebookId,
+    files: notebookState.workspace.files,
     notebooks: notebookState.workspace.notebooks.map((notebook) => ({
       id: notebook.id,
       title: notebook.title,
@@ -568,6 +617,7 @@ function applyImportedNotebook(document, titleHint) {
 
 function applyWorkspaceState(state) {
   const notebooks = Array.isArray(state.notebooks) ? state.notebooks : [];
+  notebookState.workspace.files = Array.isArray(state.files) ? state.files : [];
   notebookState.workspace.notebooks = notebooks.length
     ? notebooks.map((entry) => hydrateNotebookRecord(entry))
     : [createStarterNotebook()];
@@ -641,6 +691,62 @@ function renderWorkspaceList() {
       return button;
     }),
   );
+}
+
+function renderWorkspaceFiles() {
+  const list = document.getElementById("workspace-files");
+  const files = notebookState.workspace.files || [];
+  if (!files.length) {
+    const empty = document.createElement("div");
+    empty.className = "workspace-file-item";
+    empty.textContent = "No imported files yet.";
+    list.replaceChildren(empty);
+    return;
+  }
+
+  list.replaceChildren(
+    ...files.map((file) => {
+      const item = document.createElement("div");
+      item.className = "workspace-file-item";
+
+      const title = document.createElement("span");
+      title.className = "workspace-item-title";
+      title.textContent = file.name;
+
+      const meta = document.createElement("span");
+      meta.className = "workspace-item-meta";
+      meta.textContent = `${formatBytes(file.size)} • ${new Date(file.updatedAt).toLocaleString()}`;
+
+      const actions = document.createElement("div");
+      actions.className = "workspace-file-actions";
+
+      const exportButton = document.createElement("button");
+      exportButton.type = "button";
+      exportButton.className = "secondary";
+      exportButton.textContent = "Export";
+      exportButton.addEventListener("click", () => exportWorkspaceFile(file.id));
+
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "danger";
+      deleteButton.textContent = "Delete";
+      deleteButton.addEventListener("click", () => deleteWorkspaceFile(file.id));
+
+      actions.append(exportButton, deleteButton);
+      item.append(title, meta, actions);
+      return item;
+    }),
+  );
+}
+
+function formatBytes(size) {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function renderCellOutputs(outputList, outputs) {
@@ -806,6 +912,7 @@ function renderNotebook() {
   const cellsRoot = document.getElementById("notebook-cells");
   const template = document.getElementById("cell-template");
   renderWorkspaceList();
+  renderWorkspaceFiles();
 
   cellsRoot.replaceChildren(
     ...notebook.cells.map((cell, index) => {
@@ -991,6 +1098,11 @@ function wireEvents() {
     .getElementById("delete-notebook")
     .addEventListener("click", deleteActiveNotebook);
   document
+    .getElementById("import-file")
+    .addEventListener("click", () => {
+      document.getElementById("workspace-file-input").click();
+    });
+  document
     .getElementById("export-notebook")
     .addEventListener("click", exportNotebook);
   document
@@ -1016,6 +1128,9 @@ function wireEvents() {
   document
     .getElementById("ipynb-file-input")
     .addEventListener("change", importNotebook);
+  document
+    .getElementById("workspace-file-input")
+    .addEventListener("change", importWorkspaceFiles);
 }
 
 function createNewNotebook() {
@@ -1081,6 +1196,64 @@ async function importNotebook(event) {
   }
 
   event.target.value = "";
+}
+
+async function importWorkspaceFiles(event) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length) {
+    return;
+  }
+
+  for (const file of files) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const existingIndex = notebookState.workspace.files.findIndex((entry) => entry.name === file.name);
+    const record = createWorkspaceFile(file.name, bytes, file.type || "application/octet-stream");
+    if (existingIndex >= 0) {
+      notebookState.workspace.files.splice(existingIndex, 1, record);
+    } else {
+      notebookState.workspace.files.push(record);
+    }
+  }
+
+  if (runtimeAdapter.pyodide) {
+    await runtimeAdapter.syncWorkspaceFiles();
+  }
+
+  renderNotebook();
+  scheduleAutosave();
+  event.target.value = "";
+}
+
+function exportWorkspaceFile(fileId) {
+  const file = notebookState.workspace.files.find((entry) => entry.id === fileId);
+  if (!file) {
+    return;
+  }
+  const blob = new Blob([decodeBase64ToUint8Array(file.base64)], {
+    type: file.type || "application/octet-stream",
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = file.name;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+async function deleteWorkspaceFile(fileId) {
+  const file = notebookState.workspace.files.find((entry) => entry.id === fileId);
+  if (!file) {
+    return;
+  }
+  notebookState.workspace.files = notebookState.workspace.files.filter((entry) => entry.id !== fileId);
+  if (runtimeAdapter.pyodide) {
+    try {
+      runtimeAdapter.pyodide.FS.unlink(`/workspace/${file.name}`);
+    } catch (_error) {
+    }
+  }
+  renderNotebook();
+  scheduleAutosave();
 }
 
 function clearRecovery() {
