@@ -31,6 +31,7 @@ const BUNDLED_PACKAGE_SET = new Set(EMBEDDED_PYODIDE.bundledPackages || []);
 
 const runtimeAdapter = {
   pyodide: null,
+  runCellFn: null,
 
   async initialize() {
     if (this.pyodide) {
@@ -84,9 +85,11 @@ const runtimeAdapter = {
     });
 
     globalThis.__pyWholeDisplayOutputs = [];
-    let result;
     try {
-      result = await this.pyodide.runPythonAsync(source);
+      if (!this.runCellFn) {
+        this.runCellFn = this.pyodide.globals.get("_pywhole_run_cell");
+      }
+      await this.runCellFn(source);
     } finally {
       this.pyodide.setStdout({ batched: () => {} });
       this.pyodide.setStderr({ batched: () => {} });
@@ -97,9 +100,6 @@ const runtimeAdapter = {
       outputs.push(createStreamOutput(stdout.join("\n")));
     }
     outputs.push(...normalizeDisplayOutputs(globalThis.__pyWholeDisplayOutputs || []));
-    if (result !== undefined && result !== null) {
-      outputs.push(createStreamOutput(stringifyPyodideResult(result)));
-    }
     if (stderr.length) {
       outputs.push(createStreamOutput(stderr.join("\n")));
     }
@@ -118,7 +118,9 @@ const runtimeAdapter = {
     });
 
     await this.pyodide.runPythonAsync(`
+import ast
 import base64
+import __main__
 from pywhole_bridge import push_output
 
 def _pywhole_capture_display(value):
@@ -157,19 +159,44 @@ def _pywhole_capture_display(value):
             pass
 
     push_output({"kind": "stream", "text": str(value)})
+
+def _pywhole_capture_figures():
+    try:
+        import io
+        import matplotlib.pyplot as plt
+    except Exception:
+        return
+
+    figure_numbers = list(plt.get_fignums())
+    if not figure_numbers:
+        return
+
+    for number in figure_numbers:
+        figure = plt.figure(number)
+        buffer = io.BytesIO()
+        figure.savefig(buffer, format="png", bbox_inches="tight")
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        push_output({"kind": "image", "mime": "image/png", "data": encoded})
+    plt.close("all")
+
+def _pywhole_run_cell(source):
+    namespace = __main__.__dict__
+    tree = ast.parse(source, mode="exec")
+
+    if tree.body and isinstance(tree.body[-1], ast.Expr):
+        prefix = ast.Module(body=tree.body[:-1], type_ignores=[])
+        if prefix.body:
+            exec(compile(prefix, "<py_whole>", "exec"), namespace, namespace)
+        expr = ast.Expression(tree.body[-1].value)
+        value = eval(compile(expr, "<py_whole>", "eval"), namespace, namespace)
+        _pywhole_capture_display(value)
+    else:
+        exec(compile(tree, "<py_whole>", "exec"), namespace, namespace)
+
+    _pywhole_capture_figures()
 `);
   },
 };
-
-function stringifyPyodideResult(result) {
-  try {
-    return String(result);
-  } finally {
-    if (result && typeof result.destroy === "function") {
-      result.destroy();
-    }
-  }
-}
 
 function normalizeDisplayOutputs(items) {
   return (items || [])
