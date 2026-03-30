@@ -62,6 +62,7 @@ const runtimeAdapter = {
     await this.installNotebookHelpers();
     await this.syncWorkspaceFiles();
     notebookState.runtimeReady = true;
+    await refreshVariableViewer();
     updateKernelState(
       `Runtime ready (Pyodide ${EMBEDDED_PYODIDE.version}, ${EMBEDDED_PYODIDE.bundledPackages?.length || 0} bundled packages)`,
     );
@@ -198,6 +199,30 @@ def _pywhole_run_cell(source):
         exec(compile(tree, "<py_whole>", "exec"), namespace, namespace)
 
     _pywhole_capture_figures()
+
+def _pywhole_list_variables():
+    namespace = __main__.__dict__
+    variables = []
+    for name in sorted(namespace):
+        if name.startswith("_"):
+            continue
+        value = namespace[name]
+        try:
+            value_type = type(value).__name__
+        except Exception:
+            value_type = "unknown"
+        try:
+            value_repr = repr(value)
+        except Exception:
+            value_repr = "<unrepresentable>"
+        if len(value_repr) > 120:
+            value_repr = value_repr[:117] + "..."
+        variables.append({
+            "name": name,
+            "type": value_type,
+            "value": value_repr,
+        })
+    return variables
 `);
   },
 
@@ -217,6 +242,25 @@ def _pywhole_run_cell(source):
       } catch (_error) {
       }
       this.pyodide.FS.writeFile(path, bytes);
+    }
+  },
+
+  async listVariables() {
+    if (!this.pyodide) {
+      return [];
+    }
+
+    const listingFn = this.pyodide.globals.get("_pywhole_list_variables");
+    const proxy = listingFn();
+    try {
+      return proxy.toJs ? proxy.toJs() : Array.from(proxy);
+    } finally {
+      if (proxy && typeof proxy.destroy === "function") {
+        proxy.destroy();
+      }
+      if (listingFn && typeof listingFn.destroy === "function") {
+        listingFn.destroy();
+      }
     }
   },
 };
@@ -819,6 +863,55 @@ function renderWorkspaceTreeNodes(tree) {
   });
 }
 
+function renderVariableViewer(variables) {
+  const container = document.getElementById("variable-viewer");
+  if (!variables.length) {
+    const empty = document.createElement("div");
+    empty.className = "variable-item";
+    empty.textContent = notebookState.runtimeReady
+      ? "No user variables yet."
+      : "Initialize runtime to inspect variables.";
+    container.replaceChildren(empty);
+    return;
+  }
+
+  container.replaceChildren(
+    ...variables.map((variable) => {
+      const item = document.createElement("div");
+      item.className = "variable-item";
+
+      const name = document.createElement("span");
+      name.className = "variable-name";
+      name.textContent = variable.name;
+
+      const type = document.createElement("span");
+      type.className = "variable-type";
+      type.textContent = variable.type;
+
+      const value = document.createElement("span");
+      value.className = "variable-value";
+      value.textContent = variable.value;
+
+      item.append(name, type, value);
+      return item;
+    }),
+  );
+}
+
+async function refreshVariableViewer() {
+  if (!runtimeAdapter.pyodide || !notebookState.runtimeReady) {
+    renderVariableViewer([]);
+    return;
+  }
+
+  try {
+    const variables = await runtimeAdapter.listVariables();
+    renderVariableViewer(variables);
+  } catch (_error) {
+    renderVariableViewer([]);
+  }
+}
+
 function renderCellOutputs(outputList, outputs) {
   const items = Array.isArray(outputs) ? outputs : [];
   if (!items.length) {
@@ -1128,6 +1221,7 @@ async function runCell(cellId) {
 
   notebook.updatedAt = new Date().toISOString();
   renderNotebook();
+  await refreshVariableViewer();
   scheduleAutosave();
 }
 
@@ -1373,6 +1467,7 @@ function bootstrap() {
   loadNotebookFromStorage();
   syncNotebookTitle();
   renderNotebook();
+  renderVariableViewer([]);
   wireEvents();
   updateKernelState(
     EMBEDDED_PYODIDE.available ? "Embedded runtime ready to initialize" : "Runtime bundle missing",
