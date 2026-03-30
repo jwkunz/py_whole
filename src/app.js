@@ -55,6 +55,7 @@ const runtimeAdapter = {
       updateKernelState("Loading bundled scientific packages");
       await this.pyodide.loadPackage(EMBEDDED_PYODIDE.bundledPackages);
     }
+    await this.installNotebookHelpers();
     notebookState.runtimeReady = true;
     updateKernelState(
       `Runtime ready (Pyodide ${EMBEDDED_PYODIDE.version}, ${EMBEDDED_PYODIDE.bundledPackages?.length || 0} bundled packages)`,
@@ -82,6 +83,7 @@ const runtimeAdapter = {
       batched: (line) => stderr.push(line),
     });
 
+    globalThis.__pyWholeDisplayOutputs = [];
     let result;
     try {
       result = await this.pyodide.runPythonAsync(source);
@@ -90,18 +92,72 @@ const runtimeAdapter = {
       this.pyodide.setStderr({ batched: () => {} });
     }
 
-    const parts = [];
+    const outputs = [];
     if (stdout.length) {
-      parts.push(stdout.join("\n"));
+      outputs.push(createStreamOutput(stdout.join("\n")));
     }
+    outputs.push(...normalizeDisplayOutputs(globalThis.__pyWholeDisplayOutputs || []));
     if (result !== undefined && result !== null) {
-      parts.push(stringifyPyodideResult(result));
+      outputs.push(createStreamOutput(stringifyPyodideResult(result)));
     }
     if (stderr.length) {
-      parts.push(stderr.join("\n"));
+      outputs.push(createStreamOutput(stderr.join("\n")));
     }
 
-    return parts.join("\n").trim() || "Execution completed with no textual output.";
+    return outputs.length ? outputs : [createStreamOutput("Execution completed with no textual output.")];
+  },
+
+  async installNotebookHelpers() {
+    this.pyodide.registerJsModule("pywhole_bridge", {
+      push_output(payload) {
+        if (!globalThis.__pyWholeDisplayOutputs) {
+          globalThis.__pyWholeDisplayOutputs = [];
+        }
+        globalThis.__pyWholeDisplayOutputs.push(payload);
+      },
+    });
+
+    await this.pyodide.runPythonAsync(`
+import base64
+from pywhole_bridge import push_output
+
+def _pywhole_capture_display(value):
+    if value is None:
+        return
+
+    if hasattr(value, "_repr_html_"):
+        html = value._repr_html_()
+        if html:
+            push_output({"kind": "html", "html": str(html)})
+            return
+
+    if hasattr(value, "_repr_png_"):
+        png = value._repr_png_()
+        if png:
+            if isinstance(png, memoryview):
+                png = png.tobytes()
+            encoded = base64.b64encode(png).decode("ascii")
+            push_output({"kind": "image", "mime": "image/png", "data": encoded})
+            return
+
+    if "matplotlib" in globals():
+        try:
+            import io
+            import matplotlib.pyplot as plt
+            figures = [plt.figure(num) for num in plt.get_fignums()]
+            for figure in figures:
+                buffer = io.BytesIO()
+                figure.savefig(buffer, format="png", bbox_inches="tight")
+                encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+                push_output({"kind": "image", "mime": "image/png", "data": encoded})
+            if figures:
+                plt.close("all")
+                return
+        except Exception:
+            pass
+
+    push_output({"kind": "stream", "text": str(value)})
+`);
   },
 };
 
@@ -113,6 +169,23 @@ function stringifyPyodideResult(result) {
       result.destroy();
     }
   }
+}
+
+function normalizeDisplayOutputs(items) {
+  return (items || [])
+    .map((item) => {
+      if (item.kind === "html") {
+        return createHtmlOutput(item.html || "");
+      }
+      if (item.kind === "image") {
+        return createImageOutput(item.mime || "image/png", item.data || "");
+      }
+      if (item.kind === "stream") {
+        return createStreamOutput(item.text || "");
+      }
+      return null;
+    })
+    .filter(Boolean);
 }
 
 function installPyodideAssetFetch() {
@@ -206,7 +279,7 @@ function createCodeCell(source, output = "") {
     id: nextCellId++,
     cellType: "code",
     source,
-    output,
+    outputs: output ? [createStreamOutput(output)] : [],
     executionCount: null,
     status: "Idle",
   };
@@ -217,9 +290,31 @@ function createMarkdownCell(source) {
     id: nextCellId++,
     cellType: "markdown",
     source,
-    output: "",
+    outputs: [],
     executionCount: null,
     status: "Idle",
+  };
+}
+
+function createStreamOutput(text) {
+  return {
+    kind: "stream",
+    text,
+  };
+}
+
+function createHtmlOutput(html) {
+  return {
+    kind: "html",
+    html,
+  };
+}
+
+function createImageOutput(mime, data) {
+  return {
+    kind: "image",
+    mime,
+    data,
   };
 }
 
@@ -262,15 +357,7 @@ function buildIpynbDocument() {
       execution_count: cell.cellType === "code" ? cell.executionCount : null,
       metadata: {},
       outputs:
-        cell.cellType === "code" && cell.output
-          ? [
-              {
-                name: "stdout",
-                output_type: "stream",
-                text: `${cell.output}\n`,
-              },
-            ]
-          : [],
+        cell.cellType === "code" ? serializeOutputs(cell.outputs) : [],
       source: splitLines(cell.source),
     })),
     metadata: {
@@ -290,6 +377,39 @@ function buildIpynbDocument() {
     nbformat: 4,
     nbformat_minor: 5,
   };
+}
+
+function serializeOutputs(outputs) {
+  return (outputs || [])
+    .map((output) => {
+      if (output.kind === "stream") {
+        return {
+          name: "stdout",
+          output_type: "stream",
+          text: `${output.text}\n`,
+        };
+      }
+      if (output.kind === "html") {
+        return {
+          output_type: "display_data",
+          data: {
+            "text/html": output.html,
+          },
+          metadata: {},
+        };
+      }
+      if (output.kind === "image") {
+        return {
+          output_type: "display_data",
+          data: {
+            [output.mime]: output.data,
+          },
+          metadata: {},
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
 }
 
 function splitLines(text) {
@@ -312,26 +432,33 @@ function joinNotebookSource(source) {
 
 function parseOutputs(outputs) {
   if (!Array.isArray(outputs) || outputs.length === 0) {
-    return "";
+    return [];
   }
 
   return outputs
     .map((output) => {
       if (output.output_type === "stream") {
-        return joinNotebookSource(output.text);
+        return createStreamOutput(joinNotebookSource(output.text));
       }
       if (output.output_type === "execute_result" || output.output_type === "display_data") {
+        const html = output.data && output.data["text/html"];
+        if (html) {
+          return createHtmlOutput(joinNotebookSource(html));
+        }
+        const png = output.data && output.data["image/png"];
+        if (png) {
+          return createImageOutput("image/png", joinNotebookSource(png));
+        }
         const plain = output.data && output.data["text/plain"];
-        return plain ? joinNotebookSource(plain) : "[Rich output omitted in current importer]";
+        return plain ? createStreamOutput(joinNotebookSource(plain)) : null;
       }
       if (output.output_type === "error") {
         const traceback = output.traceback || [];
-        return traceback.join("\n");
+        return createStreamOutput(traceback.join("\n"));
       }
-      return "";
+      return null;
     })
-    .filter(Boolean)
-    .join("\n");
+    .filter(Boolean);
 }
 
 function saveNotebookToStorage() {
@@ -370,7 +497,7 @@ function applyImportedNotebook(document, titleHint) {
         id: nextCellId++,
         cellType: cell.cell_type === "markdown" ? "markdown" : "code",
         source: joinNotebookSource(cell.source),
-        output: parseOutputs(cell.outputs),
+        outputs: parseOutputs(cell.outputs),
         executionCount: cell.execution_count ?? null,
         status: "Idle",
       }))
@@ -393,6 +520,40 @@ function renderPackageList() {
   );
 }
 
+function renderCellOutputs(outputList, outputs) {
+  const items = Array.isArray(outputs) ? outputs : [];
+  if (!items.length) {
+    const empty = document.createElement("pre");
+    empty.className = "cell-output-text is-empty";
+    empty.textContent = "Cell output will appear here.";
+    outputList.replaceChildren(empty);
+    return;
+  }
+
+  outputList.replaceChildren(
+    ...items.map((output) => {
+      if (output.kind === "html") {
+        const html = document.createElement("div");
+        html.className = "cell-output-html";
+        html.innerHTML = output.html;
+        return html;
+      }
+      if (output.kind === "image") {
+        const wrapper = document.createElement("div");
+        wrapper.className = "cell-output-image";
+        const image = document.createElement("img");
+        image.src = `data:${output.mime};base64,${output.data}`;
+        wrapper.append(image);
+        return wrapper;
+      }
+      const pre = document.createElement("pre");
+      pre.className = "cell-output-text";
+      pre.textContent = output.text || "";
+      return pre;
+    }),
+  );
+}
+
 function renderNotebook() {
   const cellsRoot = document.getElementById("notebook-cells");
   const template = document.getElementById("cell-template");
@@ -405,7 +566,7 @@ function renderNotebook() {
       const statusNode = fragment.querySelector(".cell-status");
       const editorModeLabel = fragment.querySelector(".editor-mode-label");
       const editor = fragment.querySelector(".cell-editor");
-      const output = fragment.querySelector(".cell-output");
+      const outputList = fragment.querySelector(".cell-output-list");
       const toggleKindButton = fragment.querySelector(".toggle-kind");
       const runButton = fragment.querySelector(".run-cell");
       const deleteButton = fragment.querySelector(".delete-cell");
@@ -417,8 +578,7 @@ function renderNotebook() {
       statusNode.textContent = cell.status;
       editorModeLabel.textContent = cell.cellType === "markdown" ? "Markdown" : "Python";
       editor.value = cell.source;
-      output.textContent = cell.output;
-      output.classList.toggle("is-empty", !cell.output);
+      renderCellOutputs(outputList, cell.outputs);
       toggleKindButton.addEventListener("click", () => toggleCellType(cell.id));
       runButton.addEventListener("click", () => runCell(cell.id));
       deleteButton.addEventListener("click", () => deleteCell(cell.id));
@@ -480,7 +640,7 @@ function toggleCellType(cellId) {
 
   if (cell.cellType === "code") {
     cell.cellType = "markdown";
-    cell.output = "";
+    cell.outputs = [];
     cell.executionCount = null;
     cell.status = "Idle";
   } else {
@@ -499,16 +659,16 @@ async function runCell(cellId) {
   }
 
   cell.status = "Running";
-  cell.output = "Executing...";
+  cell.outputs = [createStreamOutput("Executing...")];
   renderNotebook();
 
   try {
-    const output = await runtimeAdapter.execute(cell.source);
-    cell.output = output;
+    const outputs = await runtimeAdapter.execute(cell.source);
+    cell.outputs = outputs;
     cell.executionCount = (cell.executionCount || 0) + 1;
     cell.status = "Complete";
   } catch (error) {
-    cell.output = String(error.message || error);
+    cell.outputs = [createStreamOutput(String(error.message || error))];
     cell.status = "Error";
   }
 

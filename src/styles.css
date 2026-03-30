@@ -266,7 +266,7 @@ button.danger {
 }
 
 .cell-editor,
-.cell-output {
+.cell-output-text {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -327,14 +327,40 @@ button.danger {
   color: var(--muted);
 }
 
-.cell-output {
+.cell-output-list {
+  display: grid;
+  gap: 0.75rem;
+  min-height: 70px;
+}
+
+.cell-output-text {
   min-height: 70px;
   margin: 0;
   white-space: pre-wrap;
 }
 
-.cell-output.is-empty {
+.cell-output-text.is-empty {
   color: var(--muted);
+}
+
+.cell-output-html,
+.cell-output-image {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(4, 12, 20, 0.92);
+  padding: 1rem;
+}
+
+.cell-output-html {
+  overflow: auto;
+}
+
+.cell-output-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  background: #ffffff;
 }
 
 @media (max-width: 980px) {
