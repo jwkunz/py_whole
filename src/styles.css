@@ -256,11 +256,44 @@ button.danger {
   background: rgba(255, 255, 255, 0.02);
 }
 
+.variable-item.is-selected {
+  border-color: rgba(93, 228, 199, 0.4);
+  background: rgba(93, 228, 199, 0.08);
+}
+
 .watch-item {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 0.7rem 0.8rem;
   background: rgba(255, 255, 255, 0.02);
+}
+
+.variable-detail-viewer {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.variable-detail-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.9rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.variable-detail-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.variable-detail-value {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--mono);
 }
 
 .variable-name {

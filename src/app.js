@@ -19,6 +19,7 @@ const SCIENTIFIC_PACKAGES = [
 const notebookState = {
   runtimeReady: false,
   saveState: "Unsaved",
+  selectedVariableName: "",
   watches: [],
   execution: {
     busy: false,
@@ -233,6 +234,72 @@ def _pywhole_list_variables():
         })
     return variables
 
+def _pywhole_inspect_variable(name):
+    namespace = __main__.__dict__
+    if name not in namespace:
+        return {
+            "ok": False,
+            "name": name,
+            "type": "NameError",
+            "summary": f"{name!r} is not defined",
+            "detail_kind": "text",
+            "detail": "",
+        }
+
+    value = namespace[name]
+    try:
+        value_type = type(value).__name__
+    except Exception:
+        value_type = "unknown"
+
+    try:
+        summary = repr(value)
+    except Exception:
+        summary = "<unrepresentable>"
+    if len(summary) > 160:
+        summary = summary[:157] + "..."
+
+    detail_kind = "text"
+    detail = ""
+
+    if hasattr(value, "_repr_html_"):
+        try:
+            html = value._repr_html_()
+            if html:
+                detail_kind = "html"
+                detail = str(html)
+        except Exception:
+            detail_kind = "text"
+
+    if not detail:
+        try:
+            if "numpy" in globals():
+                import numpy as np
+                if isinstance(value, np.ndarray):
+                    detail = f"shape={value.shape}\\ndtype={value.dtype}\\n\\n{np.array2string(value, threshold=40)}"
+            if not detail and "pandas" in globals():
+                import pandas as pd
+                if isinstance(value, pd.DataFrame):
+                    detail = value.to_string(max_rows=20, max_cols=12)
+                elif isinstance(value, pd.Series):
+                    detail = value.to_string(max_rows=30)
+            if not detail:
+                detail = repr(value)
+        except Exception:
+            detail = summary
+
+    if len(detail) > 4000:
+        detail = detail[:3997] + "..."
+
+    return {
+        "ok": True,
+        "name": name,
+        "type": value_type,
+        "summary": summary,
+        "detail_kind": detail_kind,
+        "detail": detail,
+    }
+
 def _pywhole_evaluate_watch(expression):
     namespace = __main__.__dict__
     try:
@@ -289,6 +356,32 @@ def _pywhole_evaluate_watch(expression):
       }
       if (listingFn && typeof listingFn.destroy === "function") {
         listingFn.destroy();
+      }
+    }
+  },
+
+  async inspectVariable(name) {
+    if (!this.pyodide) {
+      return {
+        ok: false,
+        name,
+        type: "RuntimeError",
+        summary: "Runtime is not initialized.",
+        detail_kind: "text",
+        detail: "",
+      };
+    }
+
+    const inspectFn = this.pyodide.globals.get("_pywhole_inspect_variable");
+    const proxy = inspectFn(name);
+    try {
+      return proxy.toJs ? proxy.toJs() : proxy;
+    } finally {
+      if (proxy && typeof proxy.destroy === "function") {
+        proxy.destroy();
+      }
+      if (inspectFn && typeof inspectFn.destroy === "function") {
+        inspectFn.destroy();
       }
     }
   },
@@ -1032,19 +1125,29 @@ function renderWorkspaceTreeNodes(tree) {
 function renderVariableViewer(variables) {
   const container = document.getElementById("variable-viewer");
   if (!variables.length) {
+    notebookState.selectedVariableName = "";
     const empty = document.createElement("div");
     empty.className = "variable-item";
     empty.textContent = notebookState.runtimeReady
       ? "No user variables yet."
       : "Initialize runtime to inspect variables.";
     container.replaceChildren(empty);
+    renderVariableDetail(null);
     return;
+  }
+
+  if (
+    notebookState.selectedVariableName &&
+    !variables.some((variable) => variable.name === notebookState.selectedVariableName)
+  ) {
+    notebookState.selectedVariableName = "";
   }
 
   container.replaceChildren(
     ...variables.map((variable) => {
       const item = document.createElement("div");
       item.className = "variable-item";
+      item.classList.toggle("is-selected", variable.name === notebookState.selectedVariableName);
 
       const name = document.createElement("span");
       name.className = "variable-name";
@@ -1058,10 +1161,71 @@ function renderVariableViewer(variables) {
       value.className = "variable-value";
       value.textContent = variable.value;
 
+      item.addEventListener("click", () => {
+        notebookState.selectedVariableName = variable.name;
+        renderVariableViewer(variables);
+        void refreshVariableDetail();
+      });
+
       item.append(name, type, value);
       return item;
     }),
   );
+}
+
+function renderVariableDetail(detail) {
+  const container = document.getElementById("variable-detail-viewer");
+  if (!detail) {
+    const empty = document.createElement("div");
+    empty.className = "variable-detail-card";
+    empty.textContent = notebookState.runtimeReady
+      ? "Select a variable to inspect it."
+      : "Initialize runtime to inspect variable details.";
+    container.replaceChildren(empty);
+    return;
+  }
+
+  const cards = [];
+  for (const [label, value] of [
+    ["Name", detail.name || ""],
+    ["Type", detail.type || ""],
+    ["Summary", detail.summary || ""],
+  ]) {
+    const card = document.createElement("div");
+    card.className = "variable-detail-card";
+
+    const title = document.createElement("span");
+    title.className = "variable-detail-label";
+    title.textContent = label;
+
+    const content = document.createElement("span");
+    content.className = "variable-detail-value";
+    content.textContent = value;
+
+    card.append(title, content);
+    cards.push(card);
+  }
+
+  const detailCard = document.createElement("div");
+  detailCard.className = "variable-detail-card";
+  const detailLabel = document.createElement("span");
+  detailLabel.className = "variable-detail-label";
+  detailLabel.textContent = "Detail";
+
+  let detailBody;
+  if (detail.detail_kind === "html") {
+    detailBody = document.createElement("div");
+    detailBody.className = "cell-output-html";
+    detailBody.innerHTML = detail.detail || "";
+  } else {
+    detailBody = document.createElement("span");
+    detailBody.className = "variable-detail-value";
+    detailBody.textContent = detail.detail || "";
+  }
+  detailCard.append(detailLabel, detailBody);
+  cards.push(detailCard);
+
+  container.replaceChildren(...cards);
 }
 
 function renderWatchViewer(results) {
@@ -1137,8 +1301,27 @@ async function refreshVariableViewer() {
   try {
     const variables = await runtimeAdapter.listVariables();
     renderVariableViewer(variables);
+    await refreshVariableDetail();
   } catch (_error) {
     renderVariableViewer([]);
+  }
+}
+
+async function refreshVariableDetail() {
+  if (
+    !runtimeAdapter.pyodide ||
+    !notebookState.runtimeReady ||
+    !notebookState.selectedVariableName
+  ) {
+    renderVariableDetail(null);
+    return;
+  }
+
+  try {
+    const detail = await runtimeAdapter.inspectVariable(notebookState.selectedVariableName);
+    renderVariableDetail(detail);
+  } catch (_error) {
+    renderVariableDetail(null);
   }
 }
 
@@ -1804,6 +1987,7 @@ function bootstrap() {
   syncNotebookTitle();
   renderNotebook();
   renderVariableViewer([]);
+  renderVariableDetail(null);
   renderWatchViewer([]);
   wireEvents();
   updateKernelState(
