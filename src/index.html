@@ -211,8 +211,30 @@ __INLINE_CSS__
             recover on reload.
           </div>
           <div class="button-row">
+            <button id="open-launcher" class="secondary">Launcher</button>
             <button id="add-markdown-cell" class="secondary">Add Markdown Cell</button>
             <button id="clear-recovery" class="secondary">Clear Recovery</button>
+          </div>
+        </section>
+
+        <section id="launcher-surface" class="launcher-surface is-hidden">
+          <div class="launcher-grid">
+            <button id="launcher-new-notebook" class="launcher-card">
+              <span class="launcher-card-title">New Notebook</span>
+              <span class="launcher-card-copy">Create a fresh `.ipynb` document in the workspace.</span>
+            </button>
+            <button id="launcher-import-notebook" class="launcher-card">
+              <span class="launcher-card-title">Import Notebook</span>
+              <span class="launcher-card-copy">Open an existing notebook file from disk.</span>
+            </button>
+            <button id="launcher-import-file" class="launcher-card">
+              <span class="launcher-card-title">Import Files</span>
+              <span class="launcher-card-copy">Bring datasets, images, and source files into `/workspace`.</span>
+            </button>
+            <button id="launcher-open-terminal" class="launcher-card">
+              <span class="launcher-card-title">Open Console</span>
+              <span class="launcher-card-copy">Jump to the in-browser Python console and workspace tools.</span>
+            </button>
           </div>
         </section>
 

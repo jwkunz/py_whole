@@ -88,6 +88,41 @@ button.danger {
   padding: 1.5rem;
 }
 
+.launcher-surface {
+  margin-bottom: 1rem;
+}
+
+.launcher-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.launcher-card {
+  display: grid;
+  gap: 0.55rem;
+  text-align: left;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(14, 29, 45, 0.96), rgba(9, 20, 32, 0.92));
+  color: var(--text);
+  padding: 1.1rem;
+  box-shadow: var(--shadow);
+}
+
+.launcher-card-title {
+  display: block;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.launcher-card-copy {
+  display: block;
+  color: var(--muted);
+  line-height: 1.5;
+  font-weight: 400;
+}
+
 .document-tabs {
   display: flex;
   flex-wrap: wrap;

@@ -39,8 +39,8 @@ const notebookState = {
   workspace: {
     activeNotebookId: null,
     activeDocument: {
-      type: "notebook",
-      id: null,
+      type: "launcher",
+      id: "launcher",
     },
     files: [],
     notebooks: [],
@@ -913,7 +913,7 @@ function activeNotebook() {
 }
 
 function activeDocument() {
-  return notebookState.workspace.activeDocument || { type: "notebook", id: null };
+  return notebookState.workspace.activeDocument || { type: "launcher", id: "launcher" };
 }
 
 function createCodeCell(source, output = "") {
@@ -1283,8 +1283,8 @@ function applyWorkspaceState(state) {
       ? state.activeNotebookId
       : notebookState.workspace.notebooks[0].id;
   notebookState.workspace.activeDocument = state.activeDocument || {
-    type: "notebook",
-    id: notebookState.workspace.activeNotebookId,
+    type: "launcher",
+    id: "launcher",
   };
 }
 
@@ -1364,6 +1364,11 @@ function renderDocumentTabs() {
 
   const active = activeDocument();
   const tabs = [
+    {
+      type: "launcher",
+      id: "launcher",
+      label: "Launcher",
+    },
     ...notebookState.workspace.notebooks.map((notebook) => ({
       type: "notebook",
       id: notebook.id,
@@ -1413,6 +1418,8 @@ function setActiveDocument(type, id) {
   if (type === "notebook") {
     notebookState.workspace.activeNotebookId = id;
     syncNotebookTitle();
+  } else if (type === "launcher") {
+    syncNotebookTitle();
   } else if (type === "file") {
     notebookState.selectedWorkspaceFileId = id;
   }
@@ -1427,8 +1434,8 @@ function closeActiveFileTab(fileId) {
   notebookState.selectedWorkspaceFileId = null;
   notebookState.workspaceFileDraft = "";
   notebookState.workspace.activeDocument = {
-    type: "notebook",
-    id: notebookState.workspace.activeNotebookId,
+    type: "launcher",
+    id: "launcher",
   };
   renderNotebook();
   scheduleAutosave();
@@ -2288,6 +2295,7 @@ function renderNotebook() {
     return;
   }
   const active = activeDocument();
+  const launcherSurface = document.getElementById("launcher-surface");
   const notebookSurface = document.getElementById("notebook-surface");
   const fileSurface = document.getElementById("file-surface");
   const eyebrow = document.getElementById("workspace-eyebrow");
@@ -2299,10 +2307,13 @@ function renderNotebook() {
   renderDocumentTabs();
   renderMainFileSurface();
 
-  const showingNotebook = active.type !== "file";
+  const showingLauncher = active.type === "launcher";
+  const showingFile = active.type === "file";
+  const showingNotebook = !showingLauncher && !showingFile;
+  launcherSurface.classList.toggle("is-hidden", !showingLauncher);
   notebookSurface.classList.toggle("is-hidden", !showingNotebook);
-  fileSurface.classList.toggle("is-hidden", showingNotebook);
-  eyebrow.textContent = showingNotebook ? "Notebook" : "Workspace File";
+  fileSurface.classList.toggle("is-hidden", !showingFile);
+  eyebrow.textContent = showingLauncher ? "Launcher" : showingFile ? "Workspace File" : "Notebook";
   titleInput.disabled = !showingNotebook || notebookState.execution.busy || notebookState.debug.active;
 
   cellsRoot.replaceChildren(
@@ -2871,6 +2882,28 @@ function wireEvents() {
   document
     .getElementById("add-markdown-cell")
     .addEventListener("click", addMarkdownCell);
+  document
+    .getElementById("open-launcher")
+    .addEventListener("click", () => setActiveDocument("launcher", "launcher"));
+  document
+    .getElementById("launcher-new-notebook")
+    .addEventListener("click", createNewNotebook);
+  document
+    .getElementById("launcher-import-notebook")
+    .addEventListener("click", () => {
+      document.getElementById("ipynb-file-input").click();
+    });
+  document
+    .getElementById("launcher-import-file")
+    .addEventListener("click", () => {
+      document.getElementById("workspace-file-input").click();
+    });
+  document
+    .getElementById("launcher-open-terminal")
+    .addEventListener("click", () => {
+      setActiveDocument("launcher", "launcher");
+      document.getElementById("terminal-input").focus();
+    });
   document
     .getElementById("clear-all-outputs")
     .addEventListener("click", clearAllOutputs);
