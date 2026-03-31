@@ -1658,6 +1658,43 @@ function packageImportSnippet(packageName) {
   }
 }
 
+function packageDemoSnippet(packageName) {
+  switch (packageName) {
+    case "numpy":
+      return 'import numpy as np\n\nvalues = np.array([1, 2, 3, 4], dtype=float)\nvalues.mean()';
+    case "scipy":
+      return "import numpy as np\nfrom scipy import linalg\n\nmatrix = np.array([[3.0, 1.0], [1.0, 2.0]])\nlinalg.eigvals(matrix)";
+    case "matplotlib":
+      return "import matplotlib.pyplot as plt\n\nplt.plot([0, 1, 2], [0, 1, 4])\nplt.title('py_whole demo')\nplt.show()";
+    case "sympy":
+      return "import sympy as sp\n\nx = sp.symbols('x')\nsp.factor(x**2 - 1)";
+    case "pandas":
+      return "import pandas as pd\n\ndf = pd.DataFrame({'time': [0, 1, 2], 'value': [1.2, 2.4, 3.1]})\ndf.describe()";
+    case "opencv":
+      return "import cv2\n\ncv2.__version__";
+    case "xarray":
+      return "import xarray as xr\n\narray = xr.DataArray([[1, 2], [3, 4]], dims=('x', 'y'))\narray.mean().item()";
+    case "statsmodels":
+      return "import numpy as np\nimport statsmodels.api as sm\n\nx = np.array([1, 2, 3, 4], dtype=float)\ny = np.array([2, 3, 5, 7], dtype=float)\nmodel = sm.OLS(y, sm.add_constant(x)).fit()\nmodel.params";
+    case "networkx":
+      return "import networkx as nx\n\ngraph = nx.path_graph(4)\nlist(graph.edges())";
+    case "scikit-image":
+      return "import numpy as np\nfrom skimage import filters\n\nimage = np.array([[0.0, 0.2], [0.7, 1.0]])\nfilters.sobel(image)";
+    case "plotly":
+      return "import plotly.graph_objects as go\n\nfig = go.Figure(data=go.Bar(y=[2, 3, 1]))\nfig.to_dict()['data'][0]['type']";
+    case "bokeh":
+      return "from bokeh.plotting import figure\n\nplot = figure(title='py_whole bokeh demo')\nplot.title.text";
+    case "seaborn":
+      return "import seaborn as sns\n\nsns.get_dataset_names()[:5]";
+    case "mpmath":
+      return "import mpmath as mp\n\nmp.sqrt(2)";
+    case "pint":
+      return "import pint\n\nureg = pint.UnitRegistry()\n(3 * ureg.meter / ureg.second).to('kilometer/hour')";
+    default:
+      return `${packageImportSnippet(packageName)}\n\n${packageModuleName(packageName)}.__dict__.get('__version__', 'loaded')`;
+  }
+}
+
 function packageStatus(packageName, diagnostic) {
   if (diagnostic?.ok) {
     return BUNDLED_PACKAGE_SET.has(packageName) ? "bundled-verified" : "verified";
@@ -1712,8 +1749,9 @@ function packageStatusLabel(status) {
 
 function renderPackageDetail() {
   const container = document.getElementById("package-detail");
-  const button = document.getElementById("copy-package-import");
-  if (!container || !button) {
+  const copyButton = document.getElementById("copy-package-import");
+  const demoButton = document.getElementById("insert-package-demo");
+  if (!container || !copyButton || !demoButton) {
     return;
   }
 
@@ -1746,7 +1784,8 @@ function renderPackageDetail() {
 
   card.append(title, statusNode, detail, snippet);
   container.replaceChildren(card);
-  button.disabled = !packageName;
+  copyButton.disabled = !packageName;
+  demoButton.disabled = !packageName;
 }
 
 function formatRuntimeDiagnosticsReport() {
@@ -2386,6 +2425,12 @@ function quickOpenEntries() {
       label: "Insert Selected Package Import",
       description: `Insert ${packageImportSnippet(notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0])}`,
     },
+    {
+      type: "command",
+      id: "insert-selected-package-demo",
+      label: "Insert Selected Package Demo",
+      description: `Insert a demo snippet for ${notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0]}`,
+    },
     ...(notebookState.selectedVariableName
       ? [{
           type: "command",
@@ -2462,6 +2507,12 @@ function executeQuickOpenEntry(entry) {
       const packageName = notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0];
       const inserted = insertTextIntoActiveEditor(packageImportSnippet(packageName));
       updateSaveState(inserted ? `Inserted import for ${packageName}` : "No active editor for package import");
+      return;
+    }
+    if (entry.id === "insert-selected-package-demo") {
+      const packageName = notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0];
+      const inserted = insertTextIntoActiveEditor(packageDemoSnippet(packageName));
+      updateSaveState(inserted ? `Inserted demo for ${packageName}` : "No active editor for package demo");
       return;
     }
     if (entry.id === "watch-selected-variable") {
@@ -4014,6 +4065,13 @@ function wireEvents() {
     .getElementById("copy-package-import")
     .addEventListener("click", () => {
       void copyTextToClipboard(packageImportSnippet(notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0]));
+    });
+  document
+    .getElementById("insert-package-demo")
+    .addEventListener("click", () => {
+      const packageName = notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0];
+      const inserted = insertTextIntoActiveEditor(packageDemoSnippet(packageName));
+      updateSaveState(inserted ? `Inserted demo for ${packageName}` : "No active editor for package demo");
     });
   document
     .getElementById("start-debug")
