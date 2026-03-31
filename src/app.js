@@ -30,6 +30,7 @@ const notebookState = {
     files: "",
   },
   collapsedDirectories: [],
+  panelVisibility: {},
   debug: {
     active: false,
     pausedCellId: null,
@@ -1223,13 +1224,16 @@ function saveNotebookToStorage() {
   const payload = {
     activeNotebookId: notebookState.workspace.activeNotebookId,
     activeDocument: notebookState.workspace.activeDocument,
+    collapsedDirectories: notebookState.collapsedDirectories,
     files: notebookState.workspace.files,
+    filters: notebookState.filters,
     notebooks: notebookState.workspace.notebooks.map((notebook) => ({
       id: notebook.id,
       title: notebook.title,
       updatedAt: notebook.updatedAt,
       notebook: buildIpynbDocumentForNotebook(notebook),
     })),
+    panelVisibility: notebookState.panelVisibility,
     watches: notebookState.watches,
   };
   localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(payload));
@@ -1282,6 +1286,17 @@ function applyImportedNotebook(document, titleHint) {
 
 function applyWorkspaceState(state) {
   const notebooks = Array.isArray(state.notebooks) ? state.notebooks : [];
+  notebookState.collapsedDirectories = Array.isArray(state.collapsedDirectories)
+    ? state.collapsedDirectories
+    : [];
+  notebookState.filters = {
+    notebooks: String(state.filters?.notebooks || ""),
+    files: String(state.filters?.files || ""),
+  };
+  notebookState.panelVisibility =
+    state.panelVisibility && typeof state.panelVisibility === "object"
+      ? state.panelVisibility
+      : {};
   notebookState.workspace.files = Array.isArray(state.files) ? state.files : [];
   notebookState.watches = Array.isArray(state.watches) ? state.watches : [];
   notebookState.workspace.notebooks = notebooks.length
@@ -1804,6 +1819,19 @@ function renderLauncherRecent() {
   fileCard.append(fileTitle, fileList);
 
   container.replaceChildren(notebookCard, fileCard);
+}
+
+function applyPanelVisibility() {
+  document.querySelectorAll(".panel-toggle").forEach((button) => {
+    const targetId = button.dataset.panelTarget;
+    const target = targetId ? document.getElementById(targetId) : null;
+    if (!target) {
+      return;
+    }
+    const hidden = Boolean(notebookState.panelVisibility[targetId]);
+    target.classList.toggle("is-hidden", hidden);
+    button.textContent = hidden ? "Show" : "Hide";
+  });
 }
 
 function selectWorkspaceFile(fileId) {
@@ -3161,8 +3189,9 @@ function wireEvents() {
         return;
       }
       const shouldHide = !target.classList.contains("is-hidden");
-      target.classList.toggle("is-hidden", shouldHide);
-      button.textContent = shouldHide ? "Show" : "Hide";
+      notebookState.panelVisibility[targetId] = shouldHide;
+      applyPanelVisibility();
+      scheduleAutosave();
     });
   });
 }
@@ -3395,6 +3424,7 @@ function bootstrap() {
   renderWorkspaceFileEditor();
   renderTerminalOutput();
   wireEvents();
+  applyPanelVisibility();
   updateKernelState(
     EMBEDDED_PYODIDE.available ? "Embedded runtime ready to initialize" : "Runtime bundle missing",
   );
