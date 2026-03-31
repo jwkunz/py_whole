@@ -29,6 +29,7 @@ const notebookState = {
     notebooks: "",
     files: "",
   },
+  collapsedDirectories: [],
   debug: {
     active: false,
     pausedCellId: null,
@@ -593,6 +594,10 @@ function normalizeWorkspacePath(path) {
     .split("/")
     .filter(Boolean)
     .join("/");
+}
+
+function joinWorkspacePath(...parts) {
+  return normalizeWorkspacePath(parts.filter(Boolean).join("/"));
 }
 
 function basename(path) {
@@ -1496,6 +1501,19 @@ function renderWorkspaceFiles() {
   renderWorkspaceFileEditor();
 }
 
+function isDirectoryCollapsed(path) {
+  return notebookState.collapsedDirectories.includes(path);
+}
+
+function toggleDirectoryCollapsed(path) {
+  if (isDirectoryCollapsed(path)) {
+    notebookState.collapsedDirectories = notebookState.collapsedDirectories.filter((entry) => entry !== path);
+  } else {
+    notebookState.collapsedDirectories = [...notebookState.collapsedDirectories, path];
+  }
+  renderWorkspaceFiles();
+}
+
 function formatBytes(size) {
   if (size < 1024) {
     return `${size} B`;
@@ -1527,19 +1545,25 @@ function buildWorkspaceTree(files) {
   return root;
 }
 
-function renderWorkspaceTreeNodes(tree) {
+function renderWorkspaceTreeNodes(tree, parentPath = "") {
   return Array.from(tree.entries()).map(([name, entry]) => {
     if (entry.type === "directory") {
+      const directoryPath = joinWorkspacePath(parentPath, name);
+      const collapsed = isDirectoryCollapsed(directoryPath);
       const dir = document.createElement("div");
       dir.className = "workspace-directory";
+      dir.classList.toggle("is-collapsed", collapsed);
 
-      const title = document.createElement("span");
+      const title = document.createElement("button");
+      title.type = "button";
       title.className = "workspace-directory-title";
-      title.textContent = `${name}/`;
+      title.textContent = `${collapsed ? "▸" : "▾"} ${name}/`;
+      title.addEventListener("click", () => toggleDirectoryCollapsed(directoryPath));
 
       const children = document.createElement("div");
       children.className = "workspace-directory-children";
-      children.replaceChildren(...renderWorkspaceTreeNodes(entry.children));
+      children.classList.toggle("is-hidden", collapsed);
+      children.replaceChildren(...renderWorkspaceTreeNodes(entry.children, directoryPath));
 
       dir.append(title, children);
       return dir;
