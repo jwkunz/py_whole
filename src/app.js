@@ -38,6 +38,7 @@ const notebookState = {
   runtimeReady: false,
   saveState: "Unsaved",
   focusedCellId: null,
+  selectedPackageName: "",
   selectedVariableName: "",
   selectedWorkspaceFileId: null,
   workspaceFileDraft: "",
@@ -1628,6 +1629,48 @@ function runtimeDiagnosticByPackageName() {
   );
 }
 
+function packageModuleName(packageName) {
+  switch (packageName) {
+    case "opencv":
+      return "cv2";
+    case "scikit-image":
+      return "skimage";
+    default:
+      return packageName;
+  }
+}
+
+function packageImportSnippet(packageName) {
+  const moduleName = packageModuleName(packageName);
+  switch (packageName) {
+    case "numpy":
+      return "import numpy as np";
+    case "pandas":
+      return "import pandas as pd";
+    case "matplotlib":
+      return "import matplotlib.pyplot as plt";
+    case "opencv":
+      return "import cv2";
+    case "scikit-image":
+      return "import skimage";
+    default:
+      return `import ${moduleName}`;
+  }
+}
+
+function packageStatus(packageName, diagnostic) {
+  if (diagnostic?.ok) {
+    return BUNDLED_PACKAGE_SET.has(packageName) ? "bundled-verified" : "verified";
+  }
+  if (diagnostic && !diagnostic.ok) {
+    return "missing";
+  }
+  if (BUNDLED_PACKAGE_SET.has(packageName)) {
+    return "bundled";
+  }
+  return "planned";
+}
+
 function renderPackageList() {
   const list = document.getElementById("package-list");
   const diagnosticsByPackage = runtimeDiagnosticByPackageName();
@@ -1635,23 +1678,21 @@ function renderPackageList() {
     ...SCIENTIFIC_PACKAGES.map((pkg) => {
       const item = document.createElement("li");
       const diagnostic = diagnosticsByPackage.get(pkg);
-      let status = "planned";
-      if (diagnostic?.ok) {
-        status = BUNDLED_PACKAGE_SET.has(pkg) ? "bundled-verified" : "verified";
-      } else if (diagnostic && !diagnostic.ok) {
-        status = "missing";
-      } else if (BUNDLED_PACKAGE_SET.has(pkg)) {
-        status = "bundled";
-      }
-
+      const status = packageStatus(pkg, diagnostic);
       item.className = `package-tag is-${status}`;
+      item.classList.toggle("is-selected", pkg === notebookState.selectedPackageName);
       item.textContent = `${pkg} (${packageStatusLabel(status)})`;
       if (diagnostic?.detail) {
         item.title = diagnostic.detail;
       }
+      item.addEventListener("click", () => {
+        notebookState.selectedPackageName = pkg;
+        renderPackageList();
+      });
       return item;
     }),
   );
+  renderPackageDetail();
 }
 
 function packageStatusLabel(status) {
@@ -1667,6 +1708,45 @@ function packageStatusLabel(status) {
     default:
       return "planned";
   }
+}
+
+function renderPackageDetail() {
+  const container = document.getElementById("package-detail");
+  const button = document.getElementById("copy-package-import");
+  if (!container || !button) {
+    return;
+  }
+
+  const packageName = notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0];
+  notebookState.selectedPackageName = packageName;
+  const diagnostic = runtimeDiagnosticByPackageName().get(packageName);
+  const status = packageStatus(packageName, diagnostic);
+
+  const card = document.createElement("div");
+  card.className = "package-detail-card";
+
+  const title = document.createElement("span");
+  title.className = "package-detail-title";
+  title.textContent = packageName;
+
+  const statusNode = document.createElement("span");
+  statusNode.className = "package-detail-status";
+  statusNode.textContent = `Status: ${packageStatusLabel(status)}`;
+
+  const detail = document.createElement("pre");
+  detail.className = "package-detail-body";
+  detail.textContent = diagnostic?.detail
+    || (BUNDLED_PACKAGE_SET.has(packageName)
+      ? "Bundled into the single-file artifact, but not runtime-verified yet."
+      : "Planned package. Not currently bundled into the artifact.");
+
+  const snippet = document.createElement("pre");
+  snippet.className = "package-detail-body";
+  snippet.textContent = packageImportSnippet(packageName);
+
+  card.append(title, statusNode, detail, snippet);
+  container.replaceChildren(card);
+  button.disabled = !packageName;
 }
 
 function formatRuntimeDiagnosticsReport() {
@@ -3917,6 +3997,11 @@ function wireEvents() {
     .getElementById("copy-runtime-diagnostics")
     .addEventListener("click", () => {
       void copyTextToClipboard(formatRuntimeDiagnosticsReport());
+    });
+  document
+    .getElementById("copy-package-import")
+    .addEventListener("click", () => {
+      void copyTextToClipboard(packageImportSnippet(notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0]));
     });
   document
     .getElementById("start-debug")

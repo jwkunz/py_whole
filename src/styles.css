@@ -349,6 +349,14 @@ button.danger {
   font-size: 0.88rem;
 }
 
+.package-tag {
+  cursor: pointer;
+}
+
+.package-tag.is-selected {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
 .package-tag.is-bundled-verified {
   background: rgba(93, 228, 199, 0.18);
   border-color: rgba(93, 228, 199, 0.42);
@@ -371,6 +379,37 @@ button.danger {
   background: rgba(255, 204, 102, 0.14);
   border-color: rgba(255, 204, 102, 0.28);
   color: #ffe5ae;
+}
+
+.package-detail {
+  margin-top: 0.9rem;
+}
+
+.package-detail-card {
+  display: grid;
+  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.85rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.package-detail-title {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.package-detail-status {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.package-detail-body {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--mono);
+  color: var(--muted);
 }
 
 .workspace-list {
