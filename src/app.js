@@ -3035,6 +3035,7 @@ function renderNotebook() {
       const breakpointButton = fragment.querySelector(".toggle-breakpoint");
       const insertBelowButton = fragment.querySelector(".insert-below");
       const duplicateButton = fragment.querySelector(".duplicate-cell");
+      const debugButton = fragment.querySelector(".debug-cell");
       const runButton = fragment.querySelector(".run-cell");
       const clearOutputButton = fragment.querySelector(".clear-output");
       const deleteButton = fragment.querySelector(".delete-cell");
@@ -3067,6 +3068,10 @@ function renderNotebook() {
       breakpointButton.addEventListener("click", () => toggleBreakpoint(cell.id));
       insertBelowButton.addEventListener("click", () => insertCellBelow(cell.id));
       duplicateButton.addEventListener("click", () => duplicateCell(cell.id));
+      debugButton.addEventListener("click", () => {
+        notebookState.focusedCellId = cell.id;
+        void startDebugSession(cell.id);
+      });
       runButton.addEventListener("click", () => runCell(cell.id));
       clearOutputButton.addEventListener("click", () => clearCellOutput(cell.id));
       deleteButton.addEventListener("click", () => deleteCell(cell.id));
@@ -3079,6 +3084,7 @@ function renderNotebook() {
       breakpointButton.textContent = cell.breakpoint ? "Breakpoint On" : "Breakpoint";
       insertBelowButton.disabled = controlsLocked;
       duplicateButton.disabled = controlsLocked;
+      debugButton.disabled = cell.cellType !== "code" || controlsLocked;
       deleteButton.disabled = controlsLocked;
       moveUpButton.disabled = moveUpButton.disabled || controlsLocked;
       moveDownButton.disabled = moveDownButton.disabled || controlsLocked;
@@ -3489,6 +3495,21 @@ async function runAllCells() {
   scheduleAutosave();
 }
 
+function resolveDebugStartCell(notebook, preferredCellId = notebookState.focusedCellId) {
+  if (!notebook) {
+    return null;
+  }
+
+  const preferredCell = notebook.cells.find(
+    (cell) => cell.id === preferredCellId && cell.cellType === "code",
+  );
+  if (preferredCell) {
+    return preferredCell;
+  }
+
+  return notebook.cells.find((cell) => cell.cellType === "code") || null;
+}
+
 function toggleBreakpoint(cellId) {
   const notebook = activeNotebook();
   const cell = notebook && notebook.cells.find((entry) => entry.id === cellId);
@@ -3505,18 +3526,19 @@ function toggleBreakpoint(cellId) {
   scheduleAutosave();
 }
 
-async function startDebugSession() {
+async function startDebugSession(preferredCellId = notebookState.focusedCellId) {
   const notebook = activeNotebook();
   if (!notebook || notebookState.execution.busy || notebookState.debug.active) {
     return;
   }
 
-  const firstCodeCell = notebook.cells.find((cell) => cell.cellType === "code");
-  if (!firstCodeCell) {
+  const startCell = resolveDebugStartCell(notebook, preferredCellId);
+  if (!startCell) {
     return;
   }
 
-  pauseDebugAtCell(firstCodeCell.id, `Debugger paused before cell ${firstCodeCell.id}.`);
+  notebookState.focusedCellId = startCell.id;
+  pauseDebugAtCell(startCell.id, `Debugger paused before cell ${startCell.id}.`);
 }
 
 async function continueDebugSession() {
