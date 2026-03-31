@@ -3223,6 +3223,9 @@ function wireEvents() {
     .getElementById("rename-notebook")
     .addEventListener("click", renameActiveNotebook);
   document
+    .getElementById("duplicate-notebook")
+    .addEventListener("click", duplicateActiveNotebook);
+  document
     .getElementById("delete-notebook")
     .addEventListener("click", deleteActiveNotebook);
   document
@@ -3426,6 +3429,33 @@ function renameActiveNotebook() {
   }
   notebook.title = normalized;
   notebook.updatedAt = new Date().toISOString();
+  syncNotebookTitle();
+  renderNotebook();
+  scheduleAutosave();
+}
+
+function duplicateActiveNotebook() {
+  if (notebookState.execution.busy || notebookState.debug.active) {
+    return;
+  }
+  const notebook = activeNotebook();
+  if (!notebook) {
+    return;
+  }
+
+  const duplicate = hydrateNotebookRecord({
+    id: `nb-${crypto.randomUUID()}`,
+    title: `${notebook.title} Copy`,
+    updatedAt: new Date().toISOString(),
+    notebook: buildIpynbDocumentForNotebook(notebook),
+  });
+  duplicate.id = `nb-${crypto.randomUUID()}`;
+  duplicate.title = `${notebook.title} Copy`;
+  duplicate.updatedAt = new Date().toISOString();
+
+  notebookState.workspace.notebooks.push(duplicate);
+  notebookState.workspace.activeNotebookId = duplicate.id;
+  notebookState.workspace.activeDocument = { type: "notebook", id: duplicate.id };
   syncNotebookTitle();
   renderNotebook();
   scheduleAutosave();
