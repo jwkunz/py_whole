@@ -1982,9 +1982,9 @@ function renderCellOutputs(outputList, outputs) {
         return markdown;
       }
       if (output.kind === "latex") {
-        const latex = document.createElement("pre");
+        const latex = document.createElement("div");
         latex.className = "cell-output-latex";
-        latex.textContent = output.latex || "";
+        latex.innerHTML = latexToHtml(output.latex || "");
         return latex;
       }
       if (output.kind === "svg") {
@@ -2120,11 +2120,21 @@ function markdownToHtml(markdown) {
 
 function renderInlineMarkdown(text) {
   let html = escapeHtml(text);
+  html = html.replace(/\$\$([^$]+)\$\$/g, '<span class="math-display">$1</span>');
+  html = html.replace(/\$([^$\n]+)\$/g, '<span class="math-inline">$1</span>');
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
   html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
   return html;
+}
+
+function latexToHtml(latex) {
+  const normalized = String(latex || "").trim();
+  if (!normalized) {
+    return "";
+  }
+  return `<span class="math-display">${escapeHtml(normalized)}</span>`;
 }
 
 function escapeHtml(text) {
