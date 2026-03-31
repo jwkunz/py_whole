@@ -1823,17 +1823,84 @@ function renderLauncherRecent() {
 
 function quickOpenEntries() {
   return [
+    {
+      type: "command",
+      id: "launcher",
+      label: "Launcher",
+      description: "Open the launcher surface",
+    },
+    {
+      type: "command",
+      id: "new-notebook",
+      label: "New Notebook",
+      description: "Create a fresh notebook",
+    },
+    {
+      type: "command",
+      id: "import-notebook",
+      label: "Import Notebook",
+      description: "Import an existing .ipynb file",
+    },
+    {
+      type: "command",
+      id: "import-files",
+      label: "Import Files",
+      description: "Import files into the workspace",
+    },
+    {
+      type: "command",
+      id: "open-console",
+      label: "Open Console",
+      description: "Focus the Python console in the inspector rail",
+    },
     ...notebookState.workspace.notebooks.map((notebook) => ({
       type: "notebook",
       id: notebook.id,
       label: `${notebook.title}.ipynb`,
+      description: "Notebook",
     })),
     ...notebookState.workspace.files.map((file) => ({
       type: "file",
       id: file.id,
       label: file.path || file.name,
+      description: "Workspace file",
     })),
   ];
+}
+
+function executeQuickOpenEntry(entry) {
+  if (entry.type === "command") {
+    if (entry.id === "launcher") {
+      setActiveDocument("launcher", "launcher");
+      return;
+    }
+    if (entry.id === "new-notebook") {
+      createNewNotebook();
+      return;
+    }
+    if (entry.id === "import-notebook") {
+      document.getElementById("ipynb-file-input")?.click();
+      return;
+    }
+    if (entry.id === "import-files") {
+      document.getElementById("workspace-file-input")?.click();
+      return;
+    }
+    if (entry.id === "open-console") {
+      document.getElementById("terminal-input")?.focus();
+      return;
+    }
+    return;
+  }
+
+  if (entry.type === "notebook") {
+    setActiveDocument("notebook", entry.id);
+    return;
+  }
+
+  if (entry.type === "file") {
+    selectWorkspaceFile(entry.id);
+  }
 }
 
 function renderQuickOpenResults(query = "") {
@@ -1862,13 +1929,9 @@ function renderQuickOpenResults(query = "") {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "workspace-item";
-      button.textContent = entry.label;
+      button.innerHTML = `${escapeHtml(entry.label)}${entry.description ? `<span class="workspace-item-meta">${escapeHtml(entry.description)}</span>` : ""}`;
       button.addEventListener("click", () => {
-        if (entry.type === "notebook") {
-          setActiveDocument("notebook", entry.id);
-        } else {
-          selectWorkspaceFile(entry.id);
-        }
+        executeQuickOpenEntry(entry);
         document.getElementById("quick-open-dialog")?.close();
       });
       return button;
