@@ -38,6 +38,10 @@ const notebookState = {
   },
   workspace: {
     activeNotebookId: null,
+    activeDocument: {
+      type: "notebook",
+      id: null,
+    },
     files: [],
     notebooks: [],
   },
@@ -908,6 +912,10 @@ function activeNotebook() {
   );
 }
 
+function activeDocument() {
+  return notebookState.workspace.activeDocument || { type: "notebook", id: null };
+}
+
 function createCodeCell(source, output = "") {
   return {
     id: nextCellId++,
@@ -1205,6 +1213,7 @@ function parseOutputs(outputs) {
 function saveNotebookToStorage() {
   const payload = {
     activeNotebookId: notebookState.workspace.activeNotebookId,
+    activeDocument: notebookState.workspace.activeDocument,
     files: notebookState.workspace.files,
     notebooks: notebookState.workspace.notebooks.map((notebook) => ({
       id: notebook.id,
@@ -1258,6 +1267,7 @@ function applyImportedNotebook(document, titleHint) {
   notebook.updatedAt = new Date().toISOString();
   notebookState.workspace.notebooks.push(notebook);
   notebookState.workspace.activeNotebookId = notebook.id;
+  notebookState.workspace.activeDocument = { type: "notebook", id: notebook.id };
   syncNotebookTitle();
 }
 
@@ -1272,6 +1282,10 @@ function applyWorkspaceState(state) {
     state.activeNotebookId && notebookState.workspace.notebooks.some((entry) => entry.id === state.activeNotebookId)
       ? state.activeNotebookId
       : notebookState.workspace.notebooks[0].id;
+  notebookState.workspace.activeDocument = state.activeDocument || {
+    type: "notebook",
+    id: notebookState.workspace.activeNotebookId,
+  };
 }
 
 function hydrateNotebookRecord(entry) {
@@ -1340,6 +1354,56 @@ function renderWorkspaceList() {
       return button;
     }),
   );
+}
+
+function renderDocumentTabs() {
+  const container = document.getElementById("document-tabs");
+  if (!container) {
+    return;
+  }
+
+  const active = activeDocument();
+  const tabs = [
+    ...notebookState.workspace.notebooks.map((notebook) => ({
+      type: "notebook",
+      id: notebook.id,
+      label: `${notebook.title}.ipynb`,
+    })),
+  ];
+
+  const selectedFile = selectedWorkspaceFile();
+  if (selectedFile) {
+    tabs.push({
+      type: "file",
+      id: selectedFile.id,
+      label: selectedFile.name,
+    });
+  }
+
+  container.replaceChildren(
+    ...tabs.map((tab) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "document-tab";
+      button.classList.toggle("is-active", active.type === tab.type && active.id === tab.id);
+      button.textContent = tab.label;
+      button.disabled = notebookState.execution.busy || notebookState.debug.active;
+      button.addEventListener("click", () => setActiveDocument(tab.type, tab.id));
+      return button;
+    }),
+  );
+}
+
+function setActiveDocument(type, id) {
+  notebookState.workspace.activeDocument = { type, id };
+  if (type === "notebook") {
+    notebookState.workspace.activeNotebookId = id;
+    syncNotebookTitle();
+  } else if (type === "file") {
+    notebookState.selectedWorkspaceFileId = id;
+  }
+  renderNotebook();
+  scheduleAutosave();
 }
 
 function renderWorkspaceFiles() {
@@ -1551,14 +1615,52 @@ function renderWorkspaceFileEditor() {
   revertButton.disabled = true;
 }
 
+function renderMainFileSurface() {
+  const meta = document.getElementById("file-surface-meta");
+  const preview = document.getElementById("file-surface-preview");
+  const editor = document.getElementById("file-surface-editor");
+  const saveButton = document.getElementById("file-surface-save");
+  const revertButton = document.getElementById("file-surface-revert");
+  const file = selectedWorkspaceFile();
+
+  if (!file) {
+    meta.textContent = "Select a file from the workspace.";
+    preview.replaceChildren();
+    editor.value = "";
+    editor.disabled = true;
+    saveButton.disabled = true;
+    revertButton.disabled = true;
+    return;
+  }
+
+  meta.textContent = `${file.path || file.name} • ${formatBytes(file.size)}`;
+  preview.replaceChildren(...buildWorkspaceFilePreviewNodes(file));
+
+  if (isLikelyTextFile(file)) {
+    editor.value = notebookState.workspaceFileDraft;
+    editor.disabled = notebookState.execution.busy || notebookState.debug.active;
+    saveButton.disabled = notebookState.execution.busy || notebookState.debug.active;
+    revertButton.disabled = notebookState.execution.busy || notebookState.debug.active;
+    return;
+  }
+
+  editor.value = "";
+  editor.disabled = true;
+  saveButton.disabled = true;
+  revertButton.disabled = true;
+}
+
 function selectWorkspaceFile(fileId) {
   const file = notebookState.workspace.files.find((entry) => entry.id === fileId);
   if (!file) {
     return;
   }
   notebookState.selectedWorkspaceFileId = file.id;
+  notebookState.workspace.activeDocument = { type: "file", id: file.id };
   notebookState.workspaceFileDraft = isLikelyTextFile(file) ? decodeBase64ToText(file.base64) : "";
   renderWorkspaceFiles();
+  renderDocumentTabs();
+  renderMainFileSurface();
 }
 
 function buildWorkspaceFilePreviewNodes(file) {
@@ -2151,10 +2253,23 @@ function renderNotebook() {
   if (!notebook) {
     return;
   }
+  const active = activeDocument();
+  const notebookSurface = document.getElementById("notebook-surface");
+  const fileSurface = document.getElementById("file-surface");
+  const eyebrow = document.getElementById("workspace-eyebrow");
+  const titleInput = document.getElementById("notebook-title-input");
   const cellsRoot = document.getElementById("notebook-cells");
   const template = document.getElementById("cell-template");
   renderWorkspaceList();
   renderWorkspaceFiles();
+  renderDocumentTabs();
+  renderMainFileSurface();
+
+  const showingNotebook = active.type !== "file";
+  notebookSurface.classList.toggle("is-hidden", !showingNotebook);
+  fileSurface.classList.toggle("is-hidden", showingNotebook);
+  eyebrow.textContent = showingNotebook ? "Notebook" : "Workspace File";
+  titleInput.disabled = !showingNotebook || notebookState.execution.busy || notebookState.debug.active;
 
   cellsRoot.replaceChildren(
     ...notebook.cells.map((cell, index) => {
@@ -2812,6 +2927,19 @@ function wireEvents() {
     .getElementById("workspace-file-editor")
     .addEventListener("input", (event) => {
       notebookState.workspaceFileDraft = event.target.value;
+      const mainEditor = document.getElementById("file-surface-editor");
+      if (mainEditor && mainEditor.value !== event.target.value) {
+        mainEditor.value = event.target.value;
+      }
+    });
+  document
+    .getElementById("file-surface-editor")
+    .addEventListener("input", (event) => {
+      notebookState.workspaceFileDraft = event.target.value;
+      const sidebarEditor = document.getElementById("workspace-file-editor");
+      if (sidebarEditor && sidebarEditor.value !== event.target.value) {
+        sidebarEditor.value = event.target.value;
+      }
     });
   document
     .getElementById("save-workspace-file")
@@ -2819,7 +2947,15 @@ function wireEvents() {
       void saveSelectedWorkspaceFile();
     });
   document
+    .getElementById("file-surface-save")
+    .addEventListener("click", () => {
+      void saveSelectedWorkspaceFile();
+    });
+  document
     .getElementById("revert-workspace-file")
+    .addEventListener("click", revertSelectedWorkspaceFile);
+  document
+    .getElementById("file-surface-revert")
     .addEventListener("click", revertSelectedWorkspaceFile);
 }
 
@@ -2827,6 +2963,7 @@ function createNewNotebook() {
   const notebook = createStarterNotebook();
   notebookState.workspace.notebooks.push(notebook);
   notebookState.workspace.activeNotebookId = notebook.id;
+  notebookState.workspace.activeDocument = { type: "notebook", id: notebook.id };
   syncNotebookTitle();
   renderNotebook();
   scheduleAutosave();
@@ -2871,6 +3008,7 @@ function switchNotebook(notebookId) {
     return;
   }
   notebookState.workspace.activeNotebookId = notebookId;
+  notebookState.workspace.activeDocument = { type: "notebook", id: notebookId };
   syncNotebookTitle();
   renderNotebook();
   scheduleAutosave();
@@ -2885,6 +3023,10 @@ function deleteActiveNotebook() {
     (notebook) => notebook.id !== currentId,
   );
   notebookState.workspace.activeNotebookId = notebookState.workspace.notebooks[0].id;
+  notebookState.workspace.activeDocument = {
+    type: "notebook",
+    id: notebookState.workspace.activeNotebookId,
+  };
   syncNotebookTitle();
   renderNotebook();
   scheduleAutosave();
