@@ -1626,6 +1626,15 @@ function renderWorkspaceTreeNodes(tree, parentPath = "") {
       deleteWorkspaceFile(file.id);
     });
 
+    const renameButton = document.createElement("button");
+    renameButton.type = "button";
+    renameButton.className = "secondary";
+    renameButton.textContent = "Rename";
+    renameButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      renameWorkspaceFile(file.id);
+    });
+
     const copyPathButton = document.createElement("button");
     copyPathButton.type = "button";
     copyPathButton.className = "secondary";
@@ -1672,7 +1681,14 @@ function renderWorkspaceTreeNodes(tree, parentPath = "") {
       actions.append(editButton);
     }
 
-    actions.append(copyPathButton, insertPathButton, loadSnippetButton, exportButton, deleteButton);
+    actions.append(
+      renameButton,
+      copyPathButton,
+      insertPathButton,
+      loadSnippetButton,
+      exportButton,
+      deleteButton,
+    );
     item.append(title, meta, actions);
     return item;
   });
@@ -3204,6 +3220,9 @@ function wireEvents() {
     .getElementById("new-notebook-sidebar")
     .addEventListener("click", createNewNotebook);
   document
+    .getElementById("rename-notebook")
+    .addEventListener("click", renameActiveNotebook);
+  document
     .getElementById("delete-notebook")
     .addEventListener("click", deleteActiveNotebook);
   document
@@ -3388,6 +3407,75 @@ function switchNotebook(notebookId) {
   notebookState.workspace.activeNotebookId = notebookId;
   notebookState.workspace.activeDocument = { type: "notebook", id: notebookId };
   syncNotebookTitle();
+  renderNotebook();
+  scheduleAutosave();
+}
+
+function renameActiveNotebook() {
+  if (notebookState.execution.busy || notebookState.debug.active) {
+    return;
+  }
+  const notebook = activeNotebook();
+  if (!notebook) {
+    return;
+  }
+  const nextTitle = window.prompt("Rename notebook:", notebook.title);
+  const normalized = stripNotebookExtension((nextTitle || "").trim());
+  if (!normalized) {
+    return;
+  }
+  notebook.title = normalized;
+  notebook.updatedAt = new Date().toISOString();
+  syncNotebookTitle();
+  renderNotebook();
+  scheduleAutosave();
+}
+
+function renameWorkspaceFile(fileId) {
+  if (notebookState.execution.busy || notebookState.debug.active) {
+    return;
+  }
+  const file = notebookState.workspace.files.find((entry) => entry.id === fileId);
+  if (!file) {
+    return;
+  }
+
+  const nextPath = normalizeWorkspacePath(
+    window.prompt("Rename workspace file path:", file.path || file.name) || "",
+  );
+  if (!nextPath || nextPath === (file.path || file.name)) {
+    return;
+  }
+  if (
+    notebookState.workspace.files.some(
+      (entry) => entry.id !== file.id && (entry.path || entry.name) === nextPath,
+    )
+  ) {
+    updateSaveState("Rename failed: a workspace file already uses that path.");
+    return;
+  }
+
+  const previousAbsolutePath = `/workspace/${file.path || file.name}`;
+  file.path = nextPath;
+  file.name = basename(nextPath);
+  file.updatedAt = new Date().toISOString();
+
+  if (runtimeAdapter.pyodide) {
+    const nextAbsolutePath = `/workspace/${file.path || file.name}`;
+    ensureParentDirectories(runtimeAdapter.pyodide.FS, nextAbsolutePath);
+    try {
+      runtimeAdapter.pyodide.FS.writeFile(nextAbsolutePath, decodeBase64ToUint8Array(file.base64));
+      try {
+        runtimeAdapter.pyodide.FS.unlink(previousAbsolutePath);
+      } catch (_error) {
+      }
+    } catch (_error) {
+    }
+  }
+
+  if (notebookState.selectedWorkspaceFileId === file.id && isLikelyTextFile(file)) {
+    notebookState.workspaceFileDraft = decodeBase64ToText(file.base64);
+  }
   renderNotebook();
   scheduleAutosave();
 }
