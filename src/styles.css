@@ -625,7 +625,15 @@ button.danger {
   color: var(--muted);
 }
 
+.cell-output-text.is-stderr {
+  border-color: rgba(255, 133, 122, 0.3);
+  color: #ffd1cc;
+  background: rgba(61, 14, 13, 0.65);
+}
+
 .cell-output-html,
+.cell-output-markdown,
+.cell-output-latex,
 .cell-output-svg,
 .cell-output-image,
 .cell-markdown-preview {
@@ -637,6 +645,17 @@ button.danger {
 
 .cell-output-html {
   overflow: auto;
+}
+
+.cell-output-markdown {
+  line-height: 1.65;
+}
+
+.cell-output-latex {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--mono);
 }
 
 .cell-output-svg {

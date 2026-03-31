@@ -118,14 +118,14 @@ const runtimeAdapter = {
 
     const outputs = [];
     if (stdout.length) {
-      outputs.push(createStreamOutput(stdout.join("\n")));
+      outputs.push(createStreamOutput(stdout.join("\n"), "stdout"));
     }
     outputs.push(...normalizeDisplayOutputs(globalThis.__pyWholeDisplayOutputs || []));
     if (stderr.length) {
-      outputs.push(createStreamOutput(stderr.join("\n")));
+      outputs.push(createStreamOutput(stderr.join("\n"), "stderr"));
     }
 
-    return outputs.length ? outputs : [createStreamOutput("Execution completed with no textual output.")];
+    return outputs.length ? outputs : [createStreamOutput("Execution completed with no textual output.", "stdout")];
   },
 
   async installNotebookHelpers() {
@@ -193,7 +193,19 @@ def _pywhole_capture_display(value):
         except Exception:
             pass
 
-    push_output({"kind": "stream", "text": str(value)})
+    if hasattr(value, "_repr_markdown_"):
+        markdown = value._repr_markdown_()
+        if markdown:
+            push_output({"kind": "markdown", "markdown": str(markdown)})
+            return
+
+    if hasattr(value, "_repr_latex_"):
+        latex = value._repr_latex_()
+        if latex:
+            push_output({"kind": "latex", "latex": str(latex)})
+            return
+
+    push_output({"kind": "stream", "name": "stdout", "text": str(value)})
 
 def _pywhole_capture_figures():
     try:
@@ -436,6 +448,12 @@ function normalizeDisplayOutputs(items) {
       if (item.kind === "html") {
         return createHtmlOutput(item.html || "");
       }
+      if (item.kind === "markdown") {
+        return createMarkdownOutput(item.markdown || "");
+      }
+      if (item.kind === "latex") {
+        return createLatexOutput(item.latex || "");
+      }
       if (item.kind === "svg") {
         return createSvgOutput(item.svg || "");
       }
@@ -446,7 +464,7 @@ function normalizeDisplayOutputs(items) {
         return createJsonOutput(item.data || "");
       }
       if (item.kind === "stream") {
-        return createStreamOutput(item.text || "");
+        return createStreamOutput(item.text || "", item.name || "stdout");
       }
       return null;
     })
@@ -881,9 +899,10 @@ function createMarkdownCell(source) {
   };
 }
 
-function createStreamOutput(text) {
+function createStreamOutput(text, name = "stdout") {
   return {
     kind: "stream",
+    name,
     text,
   };
 }
@@ -892,6 +911,20 @@ function createHtmlOutput(html) {
   return {
     kind: "html",
     html,
+  };
+}
+
+function createMarkdownOutput(markdown) {
+  return {
+    kind: "markdown",
+    markdown,
+  };
+}
+
+function createLatexOutput(latex) {
+  return {
+    kind: "latex",
+    latex,
   };
 }
 
@@ -988,7 +1021,7 @@ function serializeOutputs(outputs) {
     .map((output) => {
       if (output.kind === "stream") {
         return {
-          name: "stdout",
+          name: output.name || "stdout",
           output_type: "stream",
           text: `${output.text}\n`,
         };
@@ -998,6 +1031,26 @@ function serializeOutputs(outputs) {
           output_type: "display_data",
           data: {
             "text/html": output.html,
+          },
+          metadata: {},
+        };
+      }
+      if (output.kind === "markdown") {
+        return {
+          output_type: "display_data",
+          data: {
+            "text/markdown": output.markdown,
+            "text/plain": output.markdown,
+          },
+          metadata: {},
+        };
+      }
+      if (output.kind === "latex") {
+        return {
+          output_type: "display_data",
+          data: {
+            "text/latex": output.latex,
+            "text/plain": output.latex,
           },
           metadata: {},
         };
@@ -1061,12 +1114,20 @@ function parseOutputs(outputs) {
   return outputs
     .map((output) => {
       if (output.output_type === "stream") {
-        return createStreamOutput(joinNotebookSource(output.text));
+        return createStreamOutput(joinNotebookSource(output.text), output.name || "stdout");
       }
       if (output.output_type === "execute_result" || output.output_type === "display_data") {
         const html = output.data && output.data["text/html"];
         if (html) {
           return createHtmlOutput(joinNotebookSource(html));
+        }
+        const markdown = output.data && output.data["text/markdown"];
+        if (markdown) {
+          return createMarkdownOutput(joinNotebookSource(markdown));
+        }
+        const latex = output.data && output.data["text/latex"];
+        if (latex) {
+          return createLatexOutput(joinNotebookSource(latex));
         }
         const svg = output.data && output.data["image/svg+xml"];
         if (svg) {
@@ -1085,7 +1146,7 @@ function parseOutputs(outputs) {
       }
       if (output.output_type === "error") {
         const traceback = output.traceback || [];
-        return createStreamOutput(traceback.join("\n"));
+        return createStreamOutput(traceback.join("\n"), "stderr");
       }
       return null;
     })
@@ -1742,6 +1803,12 @@ function flattenOutputsToText(outputs) {
       if (output.kind === "json") {
         return output.data || "";
       }
+      if (output.kind === "markdown") {
+        return output.markdown || "";
+      }
+      if (output.kind === "latex") {
+        return output.latex || "";
+      }
       if (output.kind === "html") {
         return "[html output]";
       }
@@ -1857,6 +1924,18 @@ function renderCellOutputs(outputList, outputs) {
         html.innerHTML = output.html;
         return html;
       }
+      if (output.kind === "markdown") {
+        const markdown = document.createElement("div");
+        markdown.className = "cell-output-markdown";
+        markdown.innerHTML = markdownToHtml(output.markdown || "");
+        return markdown;
+      }
+      if (output.kind === "latex") {
+        const latex = document.createElement("pre");
+        latex.className = "cell-output-latex";
+        latex.textContent = output.latex || "";
+        return latex;
+      }
       if (output.kind === "svg") {
         const svg = document.createElement("div");
         svg.className = "cell-output-svg";
@@ -1878,7 +1957,7 @@ function renderCellOutputs(outputList, outputs) {
         return pre;
       }
       const pre = document.createElement("pre");
-      pre.className = "cell-output-text";
+      pre.className = `cell-output-text ${output.name === "stderr" ? "is-stderr" : ""}`.trim();
       pre.textContent = output.text || "";
       return pre;
     }),
