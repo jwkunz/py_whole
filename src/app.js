@@ -16,6 +16,15 @@ const SCIENTIFIC_PACKAGES = [
   "pint",
 ];
 
+const RUNTIME_DIAGNOSTIC_IMPORTS = [
+  ["numpy", "numpy"],
+  ["scipy", "scipy"],
+  ["matplotlib", "matplotlib"],
+  ["sympy", "sympy"],
+  ["pandas", "pandas"],
+  ["mpmath", "mpmath"],
+];
+
 const notebookState = {
   runtimeReady: false,
   saveState: "Unsaved",
@@ -31,6 +40,11 @@ const notebookState = {
   },
   collapsedDirectories: [],
   panelVisibility: {},
+  diagnostics: {
+    status: "Not run yet",
+    results: [],
+    lastRunAt: null,
+  },
   debug: {
     active: false,
     pausedCellId: null,
@@ -161,6 +175,50 @@ const runtimeAdapter = {
   async restart() {
     updateKernelState("Restarting via page reload");
     window.location.reload();
+  },
+
+  async runDiagnostics() {
+    if (!this.pyodide || !notebookState.runtimeReady) {
+      throw new Error("Runtime is not initialized.");
+    }
+
+    const diagnosticsJson = await this.pyodide.runPythonAsync(`
+import importlib
+import json
+import sys
+
+checks = ${JSON.stringify(RUNTIME_DIAGNOSTIC_IMPORTS)}
+results = [{
+    "name": "python",
+    "ok": True,
+    "detail": sys.version.split("\\n")[0],
+}]
+
+for package_name, module_name in checks:
+    try:
+        module = importlib.import_module(module_name)
+        version = getattr(module, "__version__", "unknown")
+        detail = f"version={version}"
+        if package_name == "matplotlib":
+            try:
+                detail += f" backend={module.get_backend()}"
+            except Exception:
+                pass
+        results.append({
+            "name": package_name,
+            "ok": True,
+            "detail": detail,
+        })
+    except Exception as exc:
+        results.append({
+            "name": package_name,
+            "ok": False,
+            "detail": str(exc),
+        })
+
+json.dumps(results)
+`);
+    return JSON.parse(diagnosticsJson);
   },
 
   async execute(source) {
@@ -888,6 +946,7 @@ function syncExecutionUi() {
     document.getElementById("new-folder"),
     document.getElementById("clear-recovery"),
     document.getElementById("add-watch"),
+    document.getElementById("run-runtime-diagnostics"),
     document.getElementById("notebook-title-input"),
     document.getElementById("run-terminal-command"),
     document.getElementById("terminal-input"),
@@ -1498,6 +1557,48 @@ function renderPackageList() {
       return item;
     }),
   );
+}
+
+function renderRuntimeDiagnostics() {
+  const container = document.getElementById("runtime-diagnostics");
+  if (!container) {
+    return;
+  }
+
+  const items = [];
+  const status = document.createElement("div");
+  status.className = "runtime-diagnostic-item";
+
+  const statusTitle = document.createElement("span");
+  statusTitle.className = "runtime-diagnostic-title";
+  statusTitle.textContent = "Status";
+
+  const statusBody = document.createElement("div");
+  statusBody.className = "runtime-diagnostic-body";
+  statusBody.textContent = notebookState.diagnostics.lastRunAt
+    ? `${notebookState.diagnostics.status}\n${new Date(notebookState.diagnostics.lastRunAt).toLocaleString()}`
+    : notebookState.diagnostics.status;
+
+  status.append(statusTitle, statusBody);
+  items.push(status);
+
+  for (const result of notebookState.diagnostics.results) {
+    const item = document.createElement("div");
+    item.className = `runtime-diagnostic-item ${result.ok ? "is-ok" : "is-error"}`.trim();
+
+    const title = document.createElement("span");
+    title.className = "runtime-diagnostic-title";
+    title.textContent = `${result.name} ${result.ok ? "OK" : "Error"}`;
+
+    const body = document.createElement("div");
+    body.className = "runtime-diagnostic-body";
+    body.textContent = result.detail || "";
+
+    item.append(title, body);
+    items.push(item);
+  }
+
+  container.replaceChildren(...items);
 }
 
 function renderWorkspaceList() {
@@ -2586,6 +2687,35 @@ function clearTerminalOutput() {
   renderTerminalOutput();
 }
 
+async function runRuntimeDiagnostics() {
+  if (!notebookState.runtimeReady || notebookState.execution.busy) {
+    return;
+  }
+
+  beginExecution("diagnostics");
+  notebookState.diagnostics.status = "Running runtime diagnostics";
+  notebookState.diagnostics.results = [];
+  notebookState.diagnostics.lastRunAt = new Date().toISOString();
+  renderRuntimeDiagnostics();
+  updateKernelState("Running runtime diagnostics");
+
+  try {
+    const results = await runtimeAdapter.runDiagnostics();
+    notebookState.diagnostics.status = results.every((result) => result.ok)
+      ? "Runtime diagnostics passed"
+      : "Runtime diagnostics found issues";
+    notebookState.diagnostics.results = results;
+    updateKernelState("Runtime ready");
+  } catch (error) {
+    notebookState.diagnostics.status = `Runtime diagnostics failed: ${String(error.message || error)}`;
+    notebookState.diagnostics.results = [];
+    updateKernelState(notebookState.diagnostics.status);
+  }
+
+  endExecution();
+  renderRuntimeDiagnostics();
+}
+
 function renderCellOutputs(outputList, outputs) {
   const items = Array.isArray(outputs) ? outputs : [];
   if (!items.length) {
@@ -3395,6 +3525,11 @@ function wireEvents() {
     .getElementById("clear-all-outputs")
     .addEventListener("click", clearAllOutputs);
   document
+    .getElementById("run-runtime-diagnostics")
+    .addEventListener("click", () => {
+      void runRuntimeDiagnostics();
+    });
+  document
     .getElementById("start-debug")
     .addEventListener("click", () => {
       void startDebugSession();
@@ -3989,6 +4124,7 @@ function clearRecovery() {
 function bootstrap() {
   hideClientError();
   renderPackageList();
+  renderRuntimeDiagnostics();
   loadNotebookFromStorage();
   document.getElementById("workspace-filter-input").value = notebookState.filters.notebooks;
   document.getElementById("workspace-file-filter-input").value = notebookState.filters.files;
