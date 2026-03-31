@@ -2466,13 +2466,26 @@ function renderVariableViewer(variables) {
       value.className = "variable-value";
       value.textContent = variable.value;
 
+      const actions = document.createElement("div");
+      actions.className = "variable-actions";
+
+      const watchButton = document.createElement("button");
+      watchButton.type = "button";
+      watchButton.className = "secondary";
+      watchButton.textContent = "Add Watch";
+      watchButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        addWatchExpression(variable.name);
+      });
+      actions.append(watchButton);
+
       item.addEventListener("click", () => {
         notebookState.selectedVariableName = variable.name;
         renderVariableViewer(variables);
         void refreshVariableDetail();
       });
 
-      item.append(name, type, value);
+      item.append(name, type, value, actions);
       return item;
     }),
   );
@@ -2595,6 +2608,26 @@ function renderWatchViewer(results) {
       return item;
     }),
   );
+}
+
+function addWatchExpression(expression) {
+  const normalized = String(expression || "").trim();
+  if (!normalized) {
+    return;
+  }
+
+  const existing = notebookState.watches.find((watch) => watch.expression.trim() === normalized);
+  if (existing) {
+    void refreshWatchViewer();
+    updateSaveState(`Watch already exists: ${normalized}`);
+    return;
+  }
+
+  notebookState.watches.push({ expression: normalized });
+  renderWatchViewer([]);
+  scheduleAutosave();
+  void refreshWatchViewer();
+  updateSaveState(`Added watch: ${normalized}`);
 }
 
 async function refreshVariableViewer() {
