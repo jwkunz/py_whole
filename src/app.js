@@ -2380,6 +2380,12 @@ function quickOpenEntries() {
       label: "Copy Runtime Report",
       description: "Copy the latest runtime diagnostics summary",
     },
+    {
+      type: "command",
+      id: "insert-selected-package-import",
+      label: "Insert Selected Package Import",
+      description: `Insert ${packageImportSnippet(notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0])}`,
+    },
     ...(notebookState.selectedVariableName
       ? [{
           type: "command",
@@ -2450,6 +2456,12 @@ function executeQuickOpenEntry(entry) {
     }
     if (entry.id === "copy-runtime-report") {
       void copyTextToClipboard(formatRuntimeDiagnosticsReport());
+      return;
+    }
+    if (entry.id === "insert-selected-package-import") {
+      const packageName = notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0];
+      const inserted = insertTextIntoActiveEditor(packageImportSnippet(packageName));
+      updateSaveState(inserted ? `Inserted import for ${packageName}` : "No active editor for package import");
       return;
     }
     if (entry.id === "watch-selected-variable") {
