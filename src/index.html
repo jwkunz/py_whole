@@ -353,6 +353,21 @@ __INLINE_CSS__
       multiple
       webkitdirectory
     />
+    <dialog id="quick-open-dialog" class="quick-open-dialog">
+      <form method="dialog" class="quick-open-card">
+        <label class="editor-label">
+          <span>Quick Open</span>
+          <input
+            id="quick-open-input"
+            class="panel-filter"
+            type="text"
+            placeholder="Type a notebook or file name"
+            aria-label="Quick open"
+          />
+        </label>
+        <div id="quick-open-results" class="launcher-recent-list"></div>
+      </form>
+    </dialog>
 
     <script>
 __INLINE_RUNTIME_BOOTSTRAP__

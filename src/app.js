@@ -1821,6 +1821,73 @@ function renderLauncherRecent() {
   container.replaceChildren(notebookCard, fileCard);
 }
 
+function quickOpenEntries() {
+  return [
+    ...notebookState.workspace.notebooks.map((notebook) => ({
+      type: "notebook",
+      id: notebook.id,
+      label: `${notebook.title}.ipynb`,
+    })),
+    ...notebookState.workspace.files.map((file) => ({
+      type: "file",
+      id: file.id,
+      label: file.path || file.name,
+    })),
+  ];
+}
+
+function renderQuickOpenResults(query = "") {
+  const container = document.getElementById("quick-open-results");
+  if (!container) {
+    return;
+  }
+  const normalized = query.trim().toLowerCase();
+  const matches = quickOpenEntries().filter((entry) => {
+    if (!normalized) {
+      return true;
+    }
+    return entry.label.toLowerCase().includes(normalized);
+  }).slice(0, 12);
+
+  if (!matches.length) {
+    const empty = document.createElement("div");
+    empty.className = "panel-copy";
+    empty.textContent = "No matching documents.";
+    container.replaceChildren(empty);
+    return;
+  }
+
+  container.replaceChildren(
+    ...matches.map((entry) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "workspace-item";
+      button.textContent = entry.label;
+      button.addEventListener("click", () => {
+        if (entry.type === "notebook") {
+          setActiveDocument("notebook", entry.id);
+        } else {
+          selectWorkspaceFile(entry.id);
+        }
+        document.getElementById("quick-open-dialog")?.close();
+      });
+      return button;
+    }),
+  );
+}
+
+function openQuickOpen() {
+  const dialog = document.getElementById("quick-open-dialog");
+  const input = document.getElementById("quick-open-input");
+  if (!dialog || !input || typeof dialog.showModal !== "function") {
+    return;
+  }
+  renderQuickOpenResults("");
+  dialog.showModal();
+  input.value = "";
+  input.focus();
+}
+
 function applyPanelVisibility() {
   document.querySelectorAll(".panel-toggle").forEach((button) => {
     const targetId = button.dataset.panelTarget;
@@ -3141,6 +3208,17 @@ function wireEvents() {
       renderWorkspaceFiles();
       renderLauncherRecent();
     });
+  document
+    .getElementById("quick-open-input")
+    .addEventListener("input", (event) => {
+      renderQuickOpenResults(event.target.value);
+    });
+  document.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
+      event.preventDefault();
+      openQuickOpen();
+    }
+  });
   document
     .getElementById("ipynb-file-input")
     .addEventListener("change", importNotebook);
