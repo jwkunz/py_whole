@@ -935,24 +935,22 @@ button.danger {
   background: rgba(10, 22, 36, 0.64);
 }
 
-.notebook-meta {
-  display: flex;
-  flex-wrap: wrap;
+.notebook-status-panel {
+  display: grid;
   gap: 0.55rem;
-  margin-bottom: 1rem;
 }
 
 .meta-card {
-  padding: 0.55rem 0.75rem;
-  border-radius: 999px;
+  padding: 0.65rem 0.75rem;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   box-shadow: none;
 }
 
 .meta-label {
-  display: inline;
-  margin-bottom: 0;
-  margin-right: 0.35rem;
+  display: block;
+  margin-bottom: 0.25rem;
+  margin-right: 0;
   color: var(--muted);
   font-size: 0.74rem;
   text-transform: uppercase;

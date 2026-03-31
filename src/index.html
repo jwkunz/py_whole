@@ -231,29 +231,6 @@ __INLINE_CSS__
           </div>
         </header>
 
-        <section class="notebook-meta">
-          <div class="meta-card">
-            <span class="meta-label">Goal</span>
-            <span class="meta-value">Notebook editing first</span>
-          </div>
-          <div class="meta-card">
-            <span class="meta-label">Execution</span>
-            <span class="meta-value">Browser-only adapter</span>
-          </div>
-          <div class="meta-card">
-            <span class="meta-label">Output</span>
-            <span class="meta-value">Text-ready cell output area</span>
-          </div>
-          <div class="meta-card">
-            <span class="meta-label">Run State</span>
-            <span class="meta-value" id="run-state">Idle</span>
-          </div>
-          <div class="meta-card">
-            <span class="meta-label">Persistence</span>
-            <span class="meta-value" id="save-state">Unsaved</span>
-          </div>
-        </section>
-
         <section class="toolbar-panel">
           <div class="toolbar-copy">
             <strong>Autosave:</strong> notebooks persist in browser storage and
@@ -322,6 +299,35 @@ __INLINE_CSS__
         </section>
 
         <aside class="inspector-rail">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Notebook</h2>
+              <button class="panel-toggle secondary" data-panel-target="notebook-status-panel" type="button">Hide</button>
+            </div>
+            <div id="notebook-status-panel" class="notebook-status-panel">
+              <div class="meta-card">
+                <span class="meta-label">Goal</span>
+                <span class="meta-value">Notebook editing first</span>
+              </div>
+              <div class="meta-card">
+                <span class="meta-label">Execution</span>
+                <span class="meta-value">Browser-only adapter</span>
+              </div>
+              <div class="meta-card">
+                <span class="meta-label">Output</span>
+                <span class="meta-value">Text-ready cell output area</span>
+              </div>
+              <div class="meta-card">
+                <span class="meta-label">Run State</span>
+                <span class="meta-value" id="run-state">Idle</span>
+              </div>
+              <div class="meta-card">
+                <span class="meta-label">Persistence</span>
+                <span class="meta-value" id="save-state">Unsaved</span>
+              </div>
+            </div>
+          </section>
+
           <section class="panel">
             <div class="panel-header">
               <h2>Variables</h2>
