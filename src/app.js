@@ -1816,6 +1816,30 @@ function formatRuntimeDiagnosticsReport() {
   return lines.join("\n");
 }
 
+function runtimeDiagnosticsMarkdown() {
+  return [
+    "# Runtime Report",
+    "",
+    "```text",
+    formatRuntimeDiagnosticsReport(),
+    "```",
+  ].join("\n");
+}
+
+function insertRuntimeReportCell() {
+  const notebook = activeNotebook();
+  if (!notebook || notebookState.execution.busy) {
+    return null;
+  }
+
+  const cell = createMarkdownCell(runtimeDiagnosticsMarkdown());
+  notebook.cells.push(cell);
+  notebook.updatedAt = new Date().toISOString();
+  renderNotebook();
+  scheduleAutosave();
+  return cell;
+}
+
 function renderRuntimeDiagnostics() {
   const container = document.getElementById("runtime-diagnostics");
   if (!container) {
@@ -2423,6 +2447,12 @@ function quickOpenEntries() {
     },
     {
       type: "command",
+      id: "insert-runtime-report",
+      label: "Insert Runtime Report",
+      description: "Insert the latest runtime diagnostics as a markdown cell",
+    },
+    {
+      type: "command",
       id: "insert-selected-package-import",
       label: "Insert Selected Package Import",
       description: `Insert ${packageImportSnippet(notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0])}`,
@@ -2509,6 +2539,15 @@ function executeQuickOpenEntry(entry) {
     }
     if (entry.id === "copy-runtime-report") {
       void copyTextToClipboard(formatRuntimeDiagnosticsReport());
+      return;
+    }
+    if (entry.id === "insert-runtime-report") {
+      const cell = insertRuntimeReportCell();
+      if (cell) {
+        notebookState.focusedCellId = cell.id;
+        focusCellEditor(cell.id);
+        updateSaveState("Inserted runtime report");
+      }
       return;
     }
     if (entry.id === "insert-selected-package-import") {
@@ -4093,6 +4132,16 @@ function wireEvents() {
     .getElementById("copy-runtime-diagnostics")
     .addEventListener("click", () => {
       void copyTextToClipboard(formatRuntimeDiagnosticsReport());
+    });
+  document
+    .getElementById("insert-runtime-report")
+    .addEventListener("click", () => {
+      const cell = insertRuntimeReportCell();
+      if (cell) {
+        notebookState.focusedCellId = cell.id;
+        focusCellEditor(cell.id);
+        updateSaveState("Inserted runtime report");
+      }
     });
   document
     .getElementById("copy-package-import")
