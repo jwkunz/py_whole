@@ -1751,7 +1751,8 @@ function renderPackageDetail() {
   const container = document.getElementById("package-detail");
   const copyButton = document.getElementById("copy-package-import");
   const demoButton = document.getElementById("insert-package-demo");
-  if (!container || !copyButton || !demoButton) {
+  const runButton = document.getElementById("run-package-demo");
+  if (!container || !copyButton || !demoButton || !runButton) {
     return;
   }
 
@@ -1786,6 +1787,7 @@ function renderPackageDetail() {
   container.replaceChildren(card);
   copyButton.disabled = !packageName;
   demoButton.disabled = !packageName;
+  runButton.disabled = !packageName || notebookState.execution.busy;
 }
 
 function formatRuntimeDiagnosticsReport() {
@@ -2431,6 +2433,12 @@ function quickOpenEntries() {
       label: "Insert Selected Package Demo",
       description: `Insert a demo snippet for ${notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0]}`,
     },
+    {
+      type: "command",
+      id: "run-selected-package-demo",
+      label: "Run Selected Package Demo",
+      description: `Create and run a demo cell for ${notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0]}`,
+    },
     ...(notebookState.selectedVariableName
       ? [{
           type: "command",
@@ -2513,6 +2521,10 @@ function executeQuickOpenEntry(entry) {
       const packageName = notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0];
       const inserted = insertTextIntoActiveEditor(packageDemoSnippet(packageName));
       updateSaveState(inserted ? `Inserted demo for ${packageName}` : "No active editor for package demo");
+      return;
+    }
+    if (entry.id === "run-selected-package-demo") {
+      void runSelectedPackageDemo();
       return;
     }
     if (entry.id === "watch-selected-variable") {
@@ -3417,15 +3429,21 @@ function renderNotebook() {
 }
 
 function addCodeCell() {
+  return addCodeCellWithSource("print('hello from py_whole')");
+}
+
+function addCodeCellWithSource(source = "") {
   const notebook = activeNotebook();
   if (!notebook) {
-    return;
+    return null;
   }
-  notebook.cells.push(createCodeCell("print('hello from py_whole')"));
+  const cell = createCodeCell(source);
+  notebook.cells.push(cell);
   notebook.updatedAt = new Date().toISOString();
   renderNotebook();
   scheduleAutosave();
   renderDebugViewer();
+  return cell;
 }
 
 function addMarkdownCell() {
@@ -3461,6 +3479,21 @@ function insertCellBelow(cellId) {
   notebookState.focusedCellId = newCell.id;
   focusCellEditor(newCell.id);
   scheduleAutosave();
+}
+
+async function runSelectedPackageDemo() {
+  const packageName = notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0];
+  const cell = addCodeCellWithSource(packageDemoSnippet(packageName));
+  if (!cell) {
+    return;
+  }
+  notebookState.focusedCellId = cell.id;
+  focusCellEditor(cell.id);
+  if (!notebookState.runtimeReady) {
+    updateSaveState(`Inserted demo for ${packageName}. Initialize runtime to run it.`);
+    return;
+  }
+  await runCell(cell.id);
 }
 
 function duplicateCell(cellId) {
@@ -4072,6 +4105,11 @@ function wireEvents() {
       const packageName = notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0];
       const inserted = insertTextIntoActiveEditor(packageDemoSnippet(packageName));
       updateSaveState(inserted ? `Inserted demo for ${packageName}` : "No active editor for package demo");
+    });
+  document
+    .getElementById("run-package-demo")
+    .addEventListener("click", () => {
+      void runSelectedPackageDemo();
     });
   document
     .getElementById("start-debug")
