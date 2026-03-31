@@ -184,8 +184,10 @@ const runtimeAdapter = {
 
     const diagnosticsJson = await this.pyodide.runPythonAsync(`
 import importlib
+import io
 import json
 import sys
+import base64
 
 checks = ${JSON.stringify(RUNTIME_DIAGNOSTIC_IMPORTS)}
 results = [{
@@ -215,6 +217,67 @@ for package_name, module_name in checks:
             "ok": False,
             "detail": str(exc),
         })
+
+try:
+    import numpy as np
+    import pandas as pd
+    series = pd.Series(np.array([1, 2, 3], dtype=float))
+    results.append({
+        "name": "numpy+pandas smoke",
+        "ok": True,
+        "detail": f"series_sum={float(series.sum())}",
+    })
+except Exception as exc:
+    results.append({
+        "name": "numpy+pandas smoke",
+        "ok": False,
+        "detail": str(exc),
+    })
+
+try:
+    import matplotlib
+    import matplotlib.pyplot as plt
+
+    figure = plt.figure()
+    axis = figure.add_subplot(111)
+    axis.plot([0, 1, 2], [0, 1, 4])
+    axis.set_title("py_whole diagnostics")
+    buffer = io.BytesIO()
+    figure.savefig(buffer, format="png", bbox_inches="tight")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    plt.close(figure)
+    results.append({
+        "name": "matplotlib render",
+        "ok": True,
+        "detail": f"bytes={len(buffer.getvalue())} backend={matplotlib.get_backend()}",
+        "preview_mime": "image/png",
+        "preview_data": encoded,
+    })
+except Exception as exc:
+    results.append({
+        "name": "matplotlib render",
+        "ok": False,
+        "detail": str(exc),
+    })
+
+try:
+    import matplotlib.pyplot as plt
+    figure = plt.figure()
+    axis = figure.add_subplot(111)
+    axis.plot([0, 1], [0, 1])
+    plt.show()
+    plt.close(figure)
+    results.append({
+        "name": "matplotlib show()",
+        "ok": True,
+        "detail": "show() completed without raising an exception",
+    })
+except Exception as exc:
+    results.append({
+        "name": "matplotlib show()",
+        "ok": False,
+        "detail": str(exc),
+    })
 
 json.dumps(results)
 `);
@@ -1595,6 +1658,17 @@ function renderRuntimeDiagnostics() {
     body.textContent = result.detail || "";
 
     item.append(title, body);
+
+    if (result.preview_data && result.preview_mime) {
+      const preview = document.createElement("div");
+      preview.className = "runtime-diagnostic-preview";
+      const image = document.createElement("img");
+      image.src = `data:${result.preview_mime};base64,${result.preview_data}`;
+      image.alt = `${result.name} preview`;
+      preview.append(image);
+      item.append(preview);
+    }
+
     items.push(item);
   }
 
