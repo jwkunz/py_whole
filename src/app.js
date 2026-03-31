@@ -1691,6 +1691,75 @@ function renderMainFileSurface() {
   revertButton.disabled = true;
 }
 
+function renderLauncherRecent() {
+  const container = document.getElementById("launcher-recent");
+  if (!container) {
+    return;
+  }
+
+  const notebookCard = document.createElement("div");
+  notebookCard.className = "launcher-recent-card";
+  const notebookTitle = document.createElement("span");
+  notebookTitle.className = "debug-card-title";
+  notebookTitle.textContent = "Recent Notebooks";
+  const notebookList = document.createElement("div");
+  notebookList.className = "launcher-recent-list";
+  if (notebookState.workspace.notebooks.length) {
+    notebookList.replaceChildren(
+      ...notebookState.workspace.notebooks
+        .slice()
+        .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+        .slice(0, 5)
+        .map((notebook) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "workspace-item";
+          button.textContent = `${notebook.title}.ipynb`;
+          button.addEventListener("click", () => setActiveDocument("notebook", notebook.id));
+          return button;
+        }),
+    );
+  } else {
+    const empty = document.createElement("div");
+    empty.className = "panel-copy";
+    empty.textContent = "No notebooks yet.";
+    notebookList.append(empty);
+  }
+  notebookCard.append(notebookTitle, notebookList);
+
+  const fileCard = document.createElement("div");
+  fileCard.className = "launcher-recent-card";
+  const fileTitle = document.createElement("span");
+  fileTitle.className = "debug-card-title";
+  fileTitle.textContent = "Recent Files";
+  const fileList = document.createElement("div");
+  fileList.className = "launcher-recent-list";
+  if (notebookState.workspace.files.length) {
+    fileList.replaceChildren(
+      ...notebookState.workspace.files
+        .slice()
+        .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+        .slice(0, 5)
+        .map((file) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "workspace-item";
+          button.textContent = file.path || file.name;
+          button.addEventListener("click", () => selectWorkspaceFile(file.id));
+          return button;
+        }),
+    );
+  } else {
+    const empty = document.createElement("div");
+    empty.className = "panel-copy";
+    empty.textContent = "No workspace files yet.";
+    fileList.append(empty);
+  }
+  fileCard.append(fileTitle, fileList);
+
+  container.replaceChildren(notebookCard, fileCard);
+}
+
 function selectWorkspaceFile(fileId) {
   const file = notebookState.workspace.files.find((entry) => entry.id === fileId);
   if (!file) {
@@ -2306,6 +2375,7 @@ function renderNotebook() {
   renderWorkspaceFiles();
   renderDocumentTabs();
   renderMainFileSurface();
+  renderLauncherRecent();
 
   const showingLauncher = active.type === "launcher";
   const showingFile = active.type === "file";

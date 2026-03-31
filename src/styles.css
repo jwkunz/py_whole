@@ -98,6 +98,26 @@ button.danger {
   gap: 1rem;
 }
 
+.launcher-recent {
+  margin-top: 1rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.launcher-recent-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  padding: 1rem;
+}
+
+.launcher-recent-list {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+}
+
 .launcher-card {
   display: grid;
   gap: 0.55rem;
