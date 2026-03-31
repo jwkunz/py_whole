@@ -768,6 +768,35 @@ function quotedWorkspacePath(file) {
   return JSON.stringify(`/workspace/${file.path || file.name}`);
 }
 
+function workspaceLoadSnippet(file) {
+  const fullPath = `/workspace/${file.path || file.name}`;
+  const quotedPath = JSON.stringify(fullPath);
+  const lowerPath = String(file.path || file.name).toLowerCase();
+
+  if (lowerPath.endsWith(".csv")) {
+    return `import pandas as pd\n\ndf = pd.read_csv(${quotedPath})\ndf.head()`;
+  }
+  if (lowerPath.endsWith(".tsv")) {
+    return `import pandas as pd\n\ndf = pd.read_csv(${quotedPath}, sep="\\t")\ndf.head()`;
+  }
+  if (lowerPath.endsWith(".json")) {
+    return `import json\n\nwith open(${quotedPath}, "r", encoding="utf-8") as handle:\n    data = json.load(handle)\n\ndata`;
+  }
+  if (lowerPath.endsWith(".npy")) {
+    return `import numpy as np\n\narray = np.load(${quotedPath})\narray`;
+  }
+  if (lowerPath.endsWith(".npz")) {
+    return `import numpy as np\n\narchive = np.load(${quotedPath})\narchive.files`;
+  }
+  if (lowerPath.match(/\.(png|jpg|jpeg|gif|webp|bmp)$/)) {
+    return `import cv2\n\nimage = cv2.imread(${quotedPath}, cv2.IMREAD_UNCHANGED)\nimage.shape`;
+  }
+  if (lowerPath.endsWith(".py")) {
+    return `with open(${quotedPath}, "r", encoding="utf-8") as handle:\n    source = handle.read()\n\nprint(source)`;
+  }
+  return `path = ${quotedPath}\npath`;
+}
+
 async function copyTextToClipboard(text) {
   try {
     await navigator.clipboard.writeText(text);
@@ -1338,6 +1367,16 @@ function renderWorkspaceTreeNodes(tree) {
       updateSaveState(inserted ? "Inserted workspace path" : "No active editor for path insertion");
     });
 
+    const loadSnippetButton = document.createElement("button");
+    loadSnippetButton.type = "button";
+    loadSnippetButton.className = "secondary";
+    loadSnippetButton.textContent = "Load Snippet";
+    loadSnippetButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const inserted = insertTextIntoActiveEditor(workspaceLoadSnippet(file));
+      updateSaveState(inserted ? "Inserted load snippet" : "No active editor for snippet insertion");
+    });
+
     if (
       isLikelyTextFile(file) ||
       isPreviewableImage(file) ||
@@ -1355,7 +1394,7 @@ function renderWorkspaceTreeNodes(tree) {
       actions.append(editButton);
     }
 
-    actions.append(copyPathButton, insertPathButton, exportButton, deleteButton);
+    actions.append(copyPathButton, insertPathButton, loadSnippetButton, exportButton, deleteButton);
     item.append(title, meta, actions);
     return item;
   });
