@@ -22,7 +22,16 @@ const RUNTIME_DIAGNOSTIC_IMPORTS = [
   ["matplotlib", "matplotlib"],
   ["sympy", "sympy"],
   ["pandas", "pandas"],
+  ["opencv", "cv2"],
+  ["xarray", "xarray"],
+  ["statsmodels", "statsmodels"],
+  ["networkx", "networkx"],
+  ["scikit-image", "skimage"],
+  ["plotly", "plotly"],
+  ["bokeh", "bokeh"],
+  ["seaborn", "seaborn"],
   ["mpmath", "mpmath"],
+  ["pint", "pint"],
 ];
 
 const notebookState = {
@@ -1611,15 +1620,53 @@ function stripNotebookExtension(name) {
   return String(name || "Untitled").replace(/\.ipynb$/i, "");
 }
 
+function runtimeDiagnosticByPackageName() {
+  return new Map(
+    notebookState.diagnostics.results
+      .filter((result) => SCIENTIFIC_PACKAGES.includes(result.name))
+      .map((result) => [result.name, result]),
+  );
+}
+
 function renderPackageList() {
   const list = document.getElementById("package-list");
+  const diagnosticsByPackage = runtimeDiagnosticByPackageName();
   list.replaceChildren(
     ...SCIENTIFIC_PACKAGES.map((pkg) => {
       const item = document.createElement("li");
-      item.textContent = BUNDLED_PACKAGE_SET.has(pkg) ? `${pkg} (bundled)` : `${pkg} (planned)`;
+      const diagnostic = diagnosticsByPackage.get(pkg);
+      let status = "planned";
+      if (diagnostic?.ok) {
+        status = BUNDLED_PACKAGE_SET.has(pkg) ? "bundled-verified" : "verified";
+      } else if (diagnostic && !diagnostic.ok) {
+        status = "missing";
+      } else if (BUNDLED_PACKAGE_SET.has(pkg)) {
+        status = "bundled";
+      }
+
+      item.className = `package-tag is-${status}`;
+      item.textContent = `${pkg} (${packageStatusLabel(status)})`;
+      if (diagnostic?.detail) {
+        item.title = diagnostic.detail;
+      }
       return item;
     }),
   );
+}
+
+function packageStatusLabel(status) {
+  switch (status) {
+    case "bundled-verified":
+      return "bundled + verified";
+    case "verified":
+      return "verified";
+    case "missing":
+      return "import failed";
+    case "bundled":
+      return "bundled";
+    default:
+      return "planned";
+  }
 }
 
 function renderRuntimeDiagnostics() {
@@ -2843,6 +2890,7 @@ async function runRuntimeDiagnostics() {
   }
 
   endExecution();
+  renderPackageList();
   renderRuntimeDiagnostics();
 }
 

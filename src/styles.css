@@ -339,13 +339,38 @@ button.danger {
   gap: 0.45rem;
 }
 
-.tag-list li {
+.tag-list li,
+.package-tag {
   border-radius: 999px;
   padding: 0.35rem 0.7rem;
   background: rgba(93, 228, 199, 0.12);
   border: 1px solid rgba(93, 228, 199, 0.25);
   color: #c9fff5;
   font-size: 0.88rem;
+}
+
+.package-tag.is-bundled-verified {
+  background: rgba(93, 228, 199, 0.18);
+  border-color: rgba(93, 228, 199, 0.42);
+  color: #d8fff8;
+}
+
+.package-tag.is-verified {
+  background: rgba(133, 199, 255, 0.16);
+  border-color: rgba(133, 199, 255, 0.35);
+  color: #d7ecff;
+}
+
+.package-tag.is-missing {
+  background: rgba(255, 133, 122, 0.14);
+  border-color: rgba(255, 133, 122, 0.3);
+  color: #ffd3ce;
+}
+
+.package-tag.is-bundled {
+  background: rgba(255, 204, 102, 0.14);
+  border-color: rgba(255, 204, 102, 0.28);
+  color: #ffe5ae;
 }
 
 .workspace-list {
