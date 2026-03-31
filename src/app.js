@@ -900,6 +900,17 @@ function createMarkdownCell(source) {
   };
 }
 
+function cloneCell(cell) {
+  return {
+    id: nextCellId++,
+    cellType: cell.cellType,
+    source: cell.source,
+    outputs: (cell.outputs || []).map((output) => ({ ...output })),
+    executionCount: cell.cellType === "code" ? cell.executionCount : null,
+    status: "Idle",
+  };
+}
+
 function createStreamOutput(text, name = "stdout") {
   return {
     kind: "stream",
@@ -2109,6 +2120,8 @@ function renderNotebook() {
       const outputBlock = fragment.querySelector(".output-block");
       const outputList = fragment.querySelector(".cell-output-list");
       const toggleKindButton = fragment.querySelector(".toggle-kind");
+      const insertBelowButton = fragment.querySelector(".insert-below");
+      const duplicateButton = fragment.querySelector(".duplicate-cell");
       const runButton = fragment.querySelector(".run-cell");
       const clearOutputButton = fragment.querySelector(".clear-output");
       const deleteButton = fragment.querySelector(".delete-cell");
@@ -2137,6 +2150,8 @@ function renderNotebook() {
       }
       renderCellOutputs(outputList, cell.outputs);
       toggleKindButton.addEventListener("click", () => toggleCellType(cell.id));
+      insertBelowButton.addEventListener("click", () => insertCellBelow(cell.id));
+      duplicateButton.addEventListener("click", () => duplicateCell(cell.id));
       runButton.addEventListener("click", () => runCell(cell.id));
       clearOutputButton.addEventListener("click", () => clearCellOutput(cell.id));
       deleteButton.addEventListener("click", () => deleteCell(cell.id));
@@ -2145,6 +2160,8 @@ function renderNotebook() {
       runButton.disabled = cell.cellType !== "code" || !canRunCell(cell.id);
       clearOutputButton.disabled = cell.cellType !== "code" || notebookState.execution.busy;
       toggleKindButton.disabled = notebookState.execution.busy;
+      insertBelowButton.disabled = notebookState.execution.busy;
+      duplicateButton.disabled = notebookState.execution.busy;
       deleteButton.disabled = notebookState.execution.busy;
       moveUpButton.disabled = moveUpButton.disabled || notebookState.execution.busy;
       moveDownButton.disabled = moveDownButton.disabled || notebookState.execution.busy;
@@ -2197,6 +2214,49 @@ function addMarkdownCell() {
   notebook.cells.push(createMarkdownCell("# Markdown cell\n\nDocument your work here."));
   notebook.updatedAt = new Date().toISOString();
   renderNotebook();
+  scheduleAutosave();
+}
+
+function insertCellBelow(cellId) {
+  const notebook = activeNotebook();
+  if (!notebook || notebookState.execution.busy) {
+    return;
+  }
+  const index = notebook.cells.findIndex((cell) => cell.id === cellId);
+  if (index < 0) {
+    return;
+  }
+
+  const sourceCell = notebook.cells[index];
+  const newCell =
+    sourceCell.cellType === "markdown"
+      ? createMarkdownCell("")
+      : createCodeCell("");
+
+  notebook.cells.splice(index + 1, 0, newCell);
+  notebook.updatedAt = new Date().toISOString();
+  renderNotebook();
+  notebookState.focusedCellId = newCell.id;
+  focusCellEditor(newCell.id);
+  scheduleAutosave();
+}
+
+function duplicateCell(cellId) {
+  const notebook = activeNotebook();
+  if (!notebook || notebookState.execution.busy) {
+    return;
+  }
+  const index = notebook.cells.findIndex((cell) => cell.id === cellId);
+  if (index < 0) {
+    return;
+  }
+
+  const duplicate = cloneCell(notebook.cells[index]);
+  notebook.cells.splice(index + 1, 0, duplicate);
+  notebook.updatedAt = new Date().toISOString();
+  renderNotebook();
+  notebookState.focusedCellId = duplicate.id;
+  focusCellEditor(duplicate.id);
   scheduleAutosave();
 }
 
