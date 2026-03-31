@@ -93,47 +93,6 @@ __INLINE_CSS__
         </section>
 
         <section class="panel">
-          <h2>Variables</h2>
-          <div id="variable-viewer" class="variable-list"></div>
-        </section>
-
-        <section class="panel">
-          <h2>Inspector</h2>
-          <div id="variable-detail-viewer" class="variable-detail-viewer"></div>
-        </section>
-
-        <section class="panel">
-          <h2>Watch</h2>
-          <div class="button-row">
-            <button id="add-watch" class="secondary">Add Watch</button>
-          </div>
-          <div id="watch-viewer" class="watch-list"></div>
-        </section>
-
-        <section class="panel">
-          <h2>Debug</h2>
-          <div id="debug-viewer" class="debug-viewer"></div>
-        </section>
-
-        <section class="panel">
-          <h2>Terminal</h2>
-          <div id="terminal-output" class="terminal-output"></div>
-          <label class="editor-label">
-            <span>Python Console</span>
-            <textarea
-              id="terminal-input"
-              class="cell-editor terminal-input"
-              spellcheck="false"
-              aria-label="Terminal input"
-            ></textarea>
-          </label>
-          <div class="button-row">
-            <button id="run-terminal-command">Run Command</button>
-            <button id="clear-terminal-output" class="secondary">Clear</button>
-          </div>
-        </section>
-
-        <section class="panel">
           <h2>Packages</h2>
           <p class="panel-copy">
             Target scientific stack for the embedded runtime:
@@ -151,7 +110,8 @@ __INLINE_CSS__
         </section>
       </aside>
 
-      <main class="workspace">
+      <main class="workspace-shell">
+        <section class="workspace">
         <section id="document-tabs" class="document-tabs"></section>
 
         <header class="workspace-header">
@@ -262,6 +222,50 @@ __INLINE_CSS__
             </div>
           </div>
         </section>
+        </section>
+
+        <aside class="inspector-rail">
+          <section class="panel">
+            <h2>Variables</h2>
+            <div id="variable-viewer" class="variable-list"></div>
+          </section>
+
+          <section class="panel">
+            <h2>Inspector</h2>
+            <div id="variable-detail-viewer" class="variable-detail-viewer"></div>
+          </section>
+
+          <section class="panel">
+            <h2>Watch</h2>
+            <div class="button-row">
+              <button id="add-watch" class="secondary">Add Watch</button>
+            </div>
+            <div id="watch-viewer" class="watch-list"></div>
+          </section>
+
+          <section class="panel">
+            <h2>Debug</h2>
+            <div id="debug-viewer" class="debug-viewer"></div>
+          </section>
+
+          <section class="panel">
+            <h2>Terminal</h2>
+            <div id="terminal-output" class="terminal-output"></div>
+            <label class="editor-label">
+              <span>Python Console</span>
+              <textarea
+                id="terminal-input"
+                class="cell-editor terminal-input"
+                spellcheck="false"
+                aria-label="Terminal input"
+              ></textarea>
+            </label>
+            <div class="button-row">
+              <button id="run-terminal-command">Run Command</button>
+              <button id="clear-terminal-output" class="secondary">Clear</button>
+            </div>
+          </section>
+        </aside>
       </main>
     </div>
 
