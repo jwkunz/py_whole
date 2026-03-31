@@ -1635,6 +1635,15 @@ function renderWorkspaceTreeNodes(tree, parentPath = "") {
       renameWorkspaceFile(file.id);
     });
 
+    const moveButton = document.createElement("button");
+    moveButton.type = "button";
+    moveButton.className = "secondary";
+    moveButton.textContent = "Move";
+    moveButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      moveWorkspaceFile(file.id);
+    });
+
     const copyPathButton = document.createElement("button");
     copyPathButton.type = "button";
     copyPathButton.className = "secondary";
@@ -1683,6 +1692,7 @@ function renderWorkspaceTreeNodes(tree, parentPath = "") {
 
     actions.append(
       renameButton,
+      moveButton,
       copyPathButton,
       insertPathButton,
       loadSnippetButton,
@@ -3234,6 +3244,9 @@ function wireEvents() {
       document.getElementById("workspace-file-input").click();
     });
   document
+    .getElementById("new-file")
+    .addEventListener("click", createWorkspaceTextFile);
+  document
     .getElementById("new-folder")
     .addEventListener("click", createWorkspaceFolder);
   document
@@ -3461,6 +3474,38 @@ function duplicateActiveNotebook() {
   scheduleAutosave();
 }
 
+function createWorkspaceTextFile() {
+  if (notebookState.execution.busy || notebookState.debug.active) {
+    return;
+  }
+  const requestedPath = normalizeWorkspacePath(window.prompt("New workspace file path:", "notes.txt") || "");
+  if (!requestedPath) {
+    return;
+  }
+  if (
+    notebookState.workspace.files.some(
+      (entry) => (entry.path || entry.name) === requestedPath,
+    )
+  ) {
+    updateSaveState("Create failed: a workspace file already uses that path.");
+    return;
+  }
+
+  const record = createWorkspaceFile(requestedPath, new TextEncoder().encode(""), "text/plain");
+  notebookState.workspace.files.push(record);
+  if (runtimeAdapter.pyodide) {
+    const absolutePath = `/workspace/${record.path || record.name}`;
+    ensureParentDirectories(runtimeAdapter.pyodide.FS, absolutePath);
+    try {
+      runtimeAdapter.pyodide.FS.writeFile(absolutePath, new Uint8Array());
+    } catch (_error) {
+    }
+  }
+  selectWorkspaceFile(record.id);
+  renderNotebook();
+  scheduleAutosave();
+}
+
 function renameWorkspaceFile(fileId) {
   if (notebookState.execution.busy || notebookState.debug.active) {
     return;
@@ -3482,6 +3527,55 @@ function renameWorkspaceFile(fileId) {
     )
   ) {
     updateSaveState("Rename failed: a workspace file already uses that path.");
+    return;
+  }
+
+  const previousAbsolutePath = `/workspace/${file.path || file.name}`;
+  file.path = nextPath;
+  file.name = basename(nextPath);
+  file.updatedAt = new Date().toISOString();
+
+  if (runtimeAdapter.pyodide) {
+    const nextAbsolutePath = `/workspace/${file.path || file.name}`;
+    ensureParentDirectories(runtimeAdapter.pyodide.FS, nextAbsolutePath);
+    try {
+      runtimeAdapter.pyodide.FS.writeFile(nextAbsolutePath, decodeBase64ToUint8Array(file.base64));
+      try {
+        runtimeAdapter.pyodide.FS.unlink(previousAbsolutePath);
+      } catch (_error) {
+      }
+    } catch (_error) {
+    }
+  }
+
+  if (notebookState.selectedWorkspaceFileId === file.id && isLikelyTextFile(file)) {
+    notebookState.workspaceFileDraft = decodeBase64ToText(file.base64);
+  }
+  renderNotebook();
+  scheduleAutosave();
+}
+
+function moveWorkspaceFile(fileId) {
+  if (notebookState.execution.busy || notebookState.debug.active) {
+    return;
+  }
+  const file = notebookState.workspace.files.find((entry) => entry.id === fileId);
+  if (!file) {
+    return;
+  }
+
+  const nextPath = normalizeWorkspacePath(
+    window.prompt("Move workspace file to path:", file.path || file.name) || "",
+  );
+  if (!nextPath || nextPath === (file.path || file.name)) {
+    return;
+  }
+  if (
+    notebookState.workspace.files.some(
+      (entry) => entry.id !== file.id && (entry.path || entry.name) === nextPath,
+    )
+  ) {
+    updateSaveState("Move failed: a workspace file already uses that path.");
     return;
   }
 
