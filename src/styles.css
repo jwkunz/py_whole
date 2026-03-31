@@ -241,6 +241,23 @@ button.danger {
   margin-top: 0;
 }
 
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.panel-header h2 {
+  margin: 0;
+}
+
+.panel-toggle {
+  padding: 0.38rem 0.7rem;
+  font-size: 0.82rem;
+}
+
 .status-list {
   display: grid;
   gap: 0.9rem;

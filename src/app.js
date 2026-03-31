@@ -3094,6 +3094,18 @@ function wireEvents() {
   document
     .getElementById("file-surface-revert")
     .addEventListener("click", revertSelectedWorkspaceFile);
+  document.querySelectorAll(".panel-toggle").forEach((button) => {
+    button.addEventListener("click", () => {
+      const targetId = button.dataset.panelTarget;
+      const target = targetId ? document.getElementById(targetId) : null;
+      if (!target) {
+        return;
+      }
+      const shouldHide = !target.classList.contains("is-hidden");
+      target.classList.toggle("is-hidden", shouldHide);
+      button.textContent = shouldHide ? "Show" : "Hide";
+    });
+  });
 }
 
 function createNewNotebook() {

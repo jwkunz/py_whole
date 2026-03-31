@@ -226,17 +226,26 @@ __INLINE_CSS__
 
         <aside class="inspector-rail">
           <section class="panel">
-            <h2>Variables</h2>
+            <div class="panel-header">
+              <h2>Variables</h2>
+              <button class="panel-toggle secondary" data-panel-target="variable-viewer" type="button">Hide</button>
+            </div>
             <div id="variable-viewer" class="variable-list"></div>
           </section>
 
           <section class="panel">
-            <h2>Inspector</h2>
+            <div class="panel-header">
+              <h2>Inspector</h2>
+              <button class="panel-toggle secondary" data-panel-target="variable-detail-viewer" type="button">Hide</button>
+            </div>
             <div id="variable-detail-viewer" class="variable-detail-viewer"></div>
           </section>
 
           <section class="panel">
-            <h2>Watch</h2>
+            <div class="panel-header">
+              <h2>Watch</h2>
+              <button class="panel-toggle secondary" data-panel-target="watch-viewer" type="button">Hide</button>
+            </div>
             <div class="button-row">
               <button id="add-watch" class="secondary">Add Watch</button>
             </div>
@@ -244,12 +253,18 @@ __INLINE_CSS__
           </section>
 
           <section class="panel">
-            <h2>Debug</h2>
+            <div class="panel-header">
+              <h2>Debug</h2>
+              <button class="panel-toggle secondary" data-panel-target="debug-viewer" type="button">Hide</button>
+            </div>
             <div id="debug-viewer" class="debug-viewer"></div>
           </section>
 
           <section class="panel">
-            <h2>Terminal</h2>
+            <div class="panel-header">
+              <h2>Terminal</h2>
+              <button class="panel-toggle secondary" data-panel-target="terminal-output" type="button">Hide</button>
+            </div>
             <div id="terminal-output" class="terminal-output"></div>
             <label class="editor-label">
               <span>Python Console</span>
