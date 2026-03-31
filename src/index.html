@@ -24,6 +24,87 @@ __INLINE_CSS__
         </div>
 
         <section class="panel">
+          <h2>Notebook Menu</h2>
+          <nav class="menu-bar menu-bar-sidebar" aria-label="Notebook menu">
+            <details class="menu-group">
+              <summary>File</summary>
+              <div class="menu-panel">
+                <button id="open-launcher" class="menu-action secondary" type="button">Launcher</button>
+                <button id="new-notebook-sidebar" class="menu-action secondary" type="button">New Notebook</button>
+                <button id="import-notebook" class="menu-action secondary" type="button">Import Notebook</button>
+                <button id="export-notebook" class="menu-action secondary" type="button">Export Notebook</button>
+                <button id="import-file" class="menu-action secondary" type="button">Import Files</button>
+                <button id="new-file" class="menu-action secondary" type="button">New File</button>
+                <button id="new-folder" class="menu-action secondary" type="button">New Folder</button>
+                <button id="rename-notebook" class="menu-action secondary" type="button">Rename Notebook</button>
+                <button id="duplicate-notebook" class="menu-action secondary" type="button">Duplicate Notebook</button>
+                <button id="delete-notebook" class="menu-action danger" type="button">Delete Notebook</button>
+              </div>
+            </details>
+            <details class="menu-group">
+              <summary>Edit</summary>
+              <div class="menu-panel">
+                <button id="add-code-cell" class="menu-action secondary" type="button">Add Code Cell</button>
+                <button id="add-markdown-cell" class="menu-action secondary" type="button">Add Markdown Cell</button>
+                <button id="clear-all-outputs" class="menu-action secondary" type="button">Clear Outputs</button>
+                <button id="clear-recovery" class="menu-action secondary" type="button">Clear Recovery</button>
+                <button class="menu-action secondary" type="button" data-command="copy-package-import">Copy Package Import</button>
+                <button class="menu-action secondary" type="button" data-command="insert-package-demo">Insert Package Demo</button>
+                <button class="menu-action secondary" type="button" data-command="run-package-demo">Run Package Demo</button>
+                <button class="menu-action secondary" type="button" data-command="insert-runtime-report">Insert Runtime Report</button>
+              </div>
+            </details>
+            <details class="menu-group">
+              <summary>Kernel</summary>
+              <div class="menu-panel">
+                <button id="initialize-runtime" class="menu-action secondary" type="button">Initialize Runtime</button>
+                <button id="restart-runtime" class="menu-action secondary" type="button">Restart Runtime</button>
+                <button id="interrupt-runtime" class="menu-action secondary" type="button">Interrupt Runtime</button>
+                <button id="run-all" class="menu-action secondary" type="button">Run All Cells</button>
+                <button id="interrupt-run" class="menu-action secondary" type="button">Interrupt Run</button>
+                <button id="start-debug" class="menu-action secondary" type="button">Debug</button>
+                <button id="continue-debug" class="menu-action secondary" type="button">Continue</button>
+                <button id="step-debug" class="menu-action secondary" type="button">Step</button>
+                <button id="stop-debug" class="menu-action secondary" type="button">Stop</button>
+              </div>
+            </details>
+            <details class="menu-group">
+              <summary>Preferences</summary>
+              <div class="menu-panel">
+                <button class="menu-action secondary panel-toggle" data-panel-target="variable-viewer" type="button">Toggle Variables</button>
+                <button class="menu-action secondary panel-toggle" data-panel-target="variable-detail-viewer" type="button">Toggle Inspector</button>
+                <button class="menu-action secondary panel-toggle" data-panel-target="watch-viewer" type="button">Toggle Watch</button>
+                <button class="menu-action secondary panel-toggle" data-panel-target="debug-viewer" type="button">Toggle Debug</button>
+                <button class="menu-action secondary panel-toggle" data-panel-target="terminal-output" type="button">Toggle Terminal</button>
+                <button id="add-watch" class="menu-action secondary" type="button">Add Watch</button>
+                <button class="menu-action secondary" type="button" data-command="launcher-open-terminal">Open Console</button>
+              </div>
+            </details>
+            <details class="menu-group">
+              <summary>Help</summary>
+              <div class="menu-panel">
+                <button class="menu-action secondary" type="button" data-command="run-runtime-diagnostics">Run Runtime Check</button>
+                <button class="menu-action secondary" type="button" data-command="copy-runtime-diagnostics">Copy Runtime Report</button>
+                <button class="menu-action secondary" type="button" data-command="launcher-run-runtime-check">Runtime Check View</button>
+                <button class="menu-action secondary" type="button" data-command="launcher-insert-runtime-report">Insert Runtime Report</button>
+                <button class="menu-action secondary" type="button" data-command="launcher-copy-runtime-report">Copy Runtime Report</button>
+              </div>
+            </details>
+          </nav>
+        </section>
+
+        <section class="panel">
+          <h2>Quick Actions</h2>
+          <div class="quick-action-grid">
+            <button id="toolbar-initialize-runtime" class="secondary" type="button" data-command="initialize-runtime">Initialize</button>
+            <button id="toolbar-add-code-cell" type="button" data-command="add-code-cell">Code Cell</button>
+            <button id="toolbar-add-markdown-cell" class="secondary" type="button" data-command="add-markdown-cell">Markdown Cell</button>
+            <button id="toolbar-run-all" class="secondary" type="button" data-command="run-all">Run All</button>
+            <button id="toolbar-interrupt-run" class="secondary" type="button" data-command="interrupt-run">Interrupt</button>
+          </div>
+        </section>
+
+        <section class="panel">
           <h2>Session</h2>
           <dl class="status-list">
             <div>
@@ -134,112 +215,38 @@ __INLINE_CSS__
 
       <main class="workspace-shell">
         <section class="workspace">
-        <header class="notebook-frame-header">
-          <div class="brand-block brand-block-main">
-            <p class="eyebrow">Notebook</p>
-            <h1>py_whole</h1>
-          </div>
-          <nav class="menu-bar" aria-label="Notebook menu">
-            <details class="menu-group">
-              <summary>File</summary>
-              <div class="menu-panel">
-                <button id="open-launcher" class="menu-action secondary" type="button">Launcher</button>
-                <button id="new-notebook-sidebar" class="menu-action secondary" type="button">New Notebook</button>
-                <button id="import-notebook" class="menu-action secondary" type="button">Import Notebook</button>
-                <button id="export-notebook" class="menu-action secondary" type="button">Export Notebook</button>
-                <button id="import-file" class="menu-action secondary" type="button">Import Files</button>
-                <button id="new-file" class="menu-action secondary" type="button">New File</button>
-                <button id="new-folder" class="menu-action secondary" type="button">New Folder</button>
-                <button id="rename-notebook" class="menu-action secondary" type="button">Rename Notebook</button>
-                <button id="duplicate-notebook" class="menu-action secondary" type="button">Duplicate Notebook</button>
-                <button id="delete-notebook" class="menu-action danger" type="button">Delete Notebook</button>
-              </div>
-            </details>
-            <details class="menu-group">
-              <summary>Edit</summary>
-              <div class="menu-panel">
-                <button id="add-code-cell" class="menu-action secondary" type="button">Add Code Cell</button>
-                <button id="add-markdown-cell" class="menu-action secondary" type="button">Add Markdown Cell</button>
-                <button id="clear-all-outputs" class="menu-action secondary" type="button">Clear Outputs</button>
-                <button id="clear-recovery" class="menu-action secondary" type="button">Clear Recovery</button>
-                <button class="menu-action secondary" type="button" data-command="copy-package-import">Copy Package Import</button>
-                <button class="menu-action secondary" type="button" data-command="insert-package-demo">Insert Package Demo</button>
-                <button class="menu-action secondary" type="button" data-command="run-package-demo">Run Package Demo</button>
-                <button class="menu-action secondary" type="button" data-command="insert-runtime-report">Insert Runtime Report</button>
-              </div>
-            </details>
-            <details class="menu-group">
-              <summary>Kernel</summary>
-              <div class="menu-panel">
-                <button id="initialize-runtime" class="menu-action secondary" type="button">Initialize Runtime</button>
-                <button id="restart-runtime" class="menu-action secondary" type="button">Restart Runtime</button>
-                <button id="interrupt-runtime" class="menu-action secondary" type="button">Interrupt Runtime</button>
-                <button id="run-all" class="menu-action secondary" type="button">Run All Cells</button>
-                <button id="interrupt-run" class="menu-action secondary" type="button">Interrupt Run</button>
-                <button id="start-debug" class="menu-action secondary" type="button">Debug</button>
-                <button id="continue-debug" class="menu-action secondary" type="button">Continue</button>
-                <button id="step-debug" class="menu-action secondary" type="button">Step</button>
-                <button id="stop-debug" class="menu-action secondary" type="button">Stop</button>
-              </div>
-            </details>
-            <details class="menu-group">
-              <summary>Preferences</summary>
-              <div class="menu-panel">
-                <button class="menu-action secondary panel-toggle" data-panel-target="variable-viewer" type="button">Toggle Variables</button>
-                <button class="menu-action secondary panel-toggle" data-panel-target="variable-detail-viewer" type="button">Toggle Inspector</button>
-                <button class="menu-action secondary panel-toggle" data-panel-target="watch-viewer" type="button">Toggle Watch</button>
-                <button class="menu-action secondary panel-toggle" data-panel-target="debug-viewer" type="button">Toggle Debug</button>
-                <button class="menu-action secondary panel-toggle" data-panel-target="terminal-output" type="button">Toggle Terminal</button>
-                <button id="add-watch" class="menu-action secondary" type="button">Add Watch</button>
-                <button class="menu-action secondary" type="button" data-command="launcher-open-terminal">Open Console</button>
-              </div>
-            </details>
-            <details class="menu-group">
-              <summary>Help</summary>
-              <div class="menu-panel">
-                <button class="menu-action secondary" type="button" data-command="run-runtime-diagnostics">Run Runtime Check</button>
-                <button class="menu-action secondary" type="button" data-command="copy-runtime-diagnostics">Copy Runtime Report</button>
-                <button class="menu-action secondary" type="button" data-command="launcher-run-runtime-check">Runtime Check View</button>
-                <button class="menu-action secondary" type="button" data-command="launcher-insert-runtime-report">Insert Runtime Report</button>
-                <button class="menu-action secondary" type="button" data-command="launcher-copy-runtime-report">Copy Runtime Report</button>
-              </div>
-            </details>
-          </nav>
-        </header>
-        <section id="document-tabs" class="document-tabs"></section>
+          <div class="workspace-main-column">
+            <section id="document-tabs" class="document-tabs"></section>
 
-        <header class="workspace-header">
-          <div>
-            <p class="eyebrow" id="workspace-eyebrow">Notebook</p>
-            <label class="title-label">
-              <span class="visually-hidden">Notebook title</span>
-              <input
-                id="notebook-title-input"
-                class="title-input"
-                type="text"
-                value="Untitled"
-                aria-label="Notebook title"
-              />
-            </label>
-          </div>
-          <div class="button-row compact-toolbar">
-            <button id="toolbar-initialize-runtime" class="secondary" type="button" data-command="initialize-runtime">Initialize</button>
-            <button id="toolbar-add-code-cell" type="button" data-command="add-code-cell">Code</button>
-            <button id="toolbar-add-markdown-cell" class="secondary" type="button" data-command="add-markdown-cell">Markdown</button>
-            <button id="toolbar-run-all" class="secondary" type="button" data-command="run-all">Run All</button>
-            <button id="toolbar-interrupt-run" class="secondary" type="button" data-command="interrupt-run">Interrupt</button>
-          </div>
-        </header>
+            <header class="workspace-header">
+              <div class="workspace-header-copy">
+                <p class="eyebrow" id="workspace-eyebrow">Notebook</p>
+                <label class="title-label">
+                  <span class="visually-hidden">Notebook title</span>
+                  <input
+                    id="notebook-title-input"
+                    class="title-input"
+                    type="text"
+                    value="Untitled"
+                    aria-label="Notebook title"
+                  />
+                </label>
+                <p class="workspace-subtitle">
+                  Use `Shift+Enter` to run the active cell. The first run initializes Python automatically if needed.
+                </p>
+              </div>
+              <div class="active-cell-toolbar">
+                <div id="active-cell-indicator" class="active-cell-indicator">Active cell: none</div>
+                <div class="button-row active-cell-actions">
+                  <button id="run-active-cell" type="button">Run Cell</button>
+                  <button id="run-above-cell" class="secondary" type="button">Run Above</button>
+                  <button id="run-below-cell" class="secondary" type="button">Run Below</button>
+                  <button id="run-all-cells-toolbar" class="secondary" type="button">Run All</button>
+                </div>
+              </div>
+            </header>
 
-        <section class="toolbar-panel">
-          <div class="toolbar-copy">
-            <strong>Autosave:</strong> notebooks persist in browser storage and
-            recover on reload.
-          </div>
-          <div class="toolbar-hint">Secondary actions live in the menus above.</div>
-        </section>
-
-        <section id="launcher-surface" class="launcher-surface is-hidden">
+            <section id="launcher-surface" class="launcher-surface is-hidden">
           <div class="launcher-grid">
             <button id="launcher-new-notebook" class="launcher-card">
               <span class="launcher-card-title">New Notebook</span>
@@ -271,31 +278,32 @@ __INLINE_CSS__
             </button>
           </div>
           <div id="launcher-recent" class="launcher-recent"></div>
-        </section>
+            </section>
 
-        <section id="notebook-surface">
-          <section id="notebook-cells" class="cells"></section>
-        </section>
+            <section id="notebook-surface" class="notebook-surface">
+              <section id="notebook-cells" class="cells"></section>
+            </section>
 
-        <section id="file-surface" class="file-surface is-hidden">
-          <div class="file-surface-card">
-            <div id="file-surface-meta" class="panel-copy">Select a file from the workspace.</div>
-            <div id="file-surface-preview" class="workspace-file-preview"></div>
-            <label class="editor-label">
-              <span>Workspace File</span>
-              <textarea
-                id="file-surface-editor"
-                class="cell-editor workspace-file-editor"
-                spellcheck="false"
-                aria-label="Workspace file editor main surface"
-              ></textarea>
-            </label>
-            <div class="button-row">
-              <button id="file-surface-save" class="secondary">Save File</button>
-              <button id="file-surface-revert" class="secondary">Revert</button>
-            </div>
+            <section id="file-surface" class="file-surface is-hidden">
+              <div class="file-surface-card">
+                <div id="file-surface-meta" class="panel-copy">Select a file from the workspace.</div>
+                <div id="file-surface-preview" class="workspace-file-preview"></div>
+                <label class="editor-label">
+                  <span>Workspace File</span>
+                  <textarea
+                    id="file-surface-editor"
+                    class="cell-editor workspace-file-editor"
+                    spellcheck="false"
+                    aria-label="Workspace file editor main surface"
+                  ></textarea>
+                </label>
+                <div class="button-row">
+                  <button id="file-surface-save" class="secondary">Save File</button>
+                  <button id="file-surface-revert" class="secondary">Revert</button>
+                </div>
+              </div>
+            </section>
           </div>
-        </section>
         </section>
 
         <aside class="inspector-rail">
@@ -389,45 +397,55 @@ __INLINE_CSS__
 
     <template id="cell-template">
       <article class="cell">
-        <header class="cell-header">
-          <div class="cell-label-wrap">
-            <span class="cell-kind">Code</span>
-            <span class="cell-status">Idle</span>
+        <div class="cell-shell">
+          <aside class="cell-gutter">
+            <div class="cell-prompt">[ ]</div>
+            <div class="cell-label-wrap">
+              <span class="cell-kind">Code</span>
+              <span class="cell-status">Idle</span>
+            </div>
+            <div class="cell-actions">
+              <button class="run-cell cell-run-button" type="button" aria-label="Run cell">Run</button>
+              <details class="cell-menu">
+                <summary class="cell-menu-toggle" aria-label="Cell actions">...</summary>
+                <div class="cell-menu-panel">
+                  <button class="debug-cell secondary" type="button">Debug</button>
+                  <button class="run-to-cell secondary" type="button">Run To Here</button>
+                  <button class="insert-below secondary" type="button">Insert Below</button>
+                  <button class="duplicate-cell secondary" type="button">Duplicate</button>
+                  <button class="toggle-kind secondary" type="button">Toggle Type</button>
+                  <button class="toggle-breakpoint secondary" type="button">Breakpoint</button>
+                  <button class="move-up secondary" type="button">Move Up</button>
+                  <button class="move-down secondary" type="button">Move Down</button>
+                  <button class="clear-output secondary" type="button">Clear Output</button>
+                  <button class="delete-cell danger" type="button">Delete</button>
+                </div>
+              </details>
+            </div>
+          </aside>
+          <div class="cell-main">
+            <label class="editor-label">
+              <span class="editor-mode-label">Python</span>
+              <textarea
+                class="cell-editor"
+                spellcheck="false"
+                aria-label="Code cell editor"
+              ></textarea>
+            </label>
+            <section class="markdown-preview-block">
+              <div class="output-header">
+                <span>Preview</span>
+              </div>
+              <div class="cell-markdown-preview"></div>
+            </section>
+            <section class="output-block">
+              <div class="output-header">
+                <span>Output</span>
+              </div>
+              <div class="cell-output-list"></div>
+            </section>
           </div>
-          <div class="button-row">
-            <button class="toggle-kind secondary" type="button">Toggle Type</button>
-            <button class="toggle-breakpoint secondary" type="button">Breakpoint</button>
-            <button class="insert-below secondary" type="button">Below</button>
-            <button class="duplicate-cell secondary" type="button">Duplicate</button>
-            <button class="move-up secondary" type="button">Up</button>
-            <button class="move-down secondary" type="button">Down</button>
-            <button class="clear-output secondary" type="button">Clear Output</button>
-            <button class="debug-cell secondary" type="button">Debug</button>
-            <button class="run-to-cell secondary" type="button">Run To Here</button>
-            <button class="run-cell" type="button">Run</button>
-            <button class="delete-cell danger" type="button">Delete</button>
-          </div>
-        </header>
-        <label class="editor-label">
-          <span class="editor-mode-label">Python</span>
-          <textarea
-            class="cell-editor"
-            spellcheck="false"
-            aria-label="Code cell editor"
-          ></textarea>
-        </label>
-        <section class="markdown-preview-block">
-          <div class="output-header">
-            <span>Preview</span>
-          </div>
-          <div class="cell-markdown-preview"></div>
-        </section>
-        <section class="output-block">
-          <div class="output-header">
-            <span>Output</span>
-          </div>
-          <div class="cell-output-list"></div>
-        </section>
+        </div>
       </article>
     </template>
 

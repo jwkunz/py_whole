@@ -451,11 +451,17 @@ def _pywhole_patch_matplotlib():
             return None
 
         plt.show = _pywhole_show
+        try:
+            import matplotlib.figure as _pywhole_figure
+            _pywhole_figure.Figure.show = lambda self, *args, **kwargs: _pywhole_show()
+        except Exception:
+            pass
         plt.pause = lambda *args, **kwargs: None
     except Exception:
         pass
 
 def _pywhole_run_cell(source):
+    _pywhole_patch_matplotlib()
     namespace = __main__.__dict__
     tree = ast.parse(source, mode="exec")
 
@@ -469,6 +475,7 @@ def _pywhole_run_cell(source):
     else:
         exec(compile(tree, "<py_whole>", "exec"), namespace, namespace)
 
+    _pywhole_patch_matplotlib()
     _pywhole_capture_figures()
 
 _pywhole_patch_matplotlib()
@@ -1066,6 +1073,7 @@ function syncExecutionUi() {
     );
   });
   renderWorkspaceFileEditor();
+  updateActiveCellToolbar();
 }
 
 function beginExecution(cellId, options = {}) {
@@ -3355,6 +3363,7 @@ function renderNotebook() {
       const controlsLocked = notebookState.execution.busy || notebookState.debug.active;
       const fragment = template.content.cloneNode(true);
       const article = fragment.querySelector(".cell");
+      const promptNode = fragment.querySelector(".cell-prompt");
       const kindNode = fragment.querySelector(".cell-kind");
       const statusNode = fragment.querySelector(".cell-status");
       const editorModeLabel = fragment.querySelector(".editor-mode-label");
@@ -3377,16 +3386,37 @@ function renderNotebook() {
 
       article.dataset.cellId = String(cell.id);
       article.dataset.breakpoint = String(Boolean(cell.breakpoint));
+      article.addEventListener("click", (event) => {
+        const target = event.target;
+        if (
+          target instanceof HTMLButtonElement
+          || (target instanceof HTMLElement && target.tagName === "SUMMARY")
+        ) {
+          return;
+        }
+        notebookState.focusedCellId = cell.id;
+        renderNotebook();
+      });
       article.classList.toggle(
         "is-running",
         notebookState.execution.busy && notebookState.execution.currentCellId === cell.id,
       );
+      article.classList.toggle("is-focused", notebookState.focusedCellId === cell.id);
       article.classList.toggle(
         "is-interrupt-pending",
         notebookState.execution.busy &&
           notebookState.execution.currentCellId === cell.id &&
           notebookState.execution.interruptRequested,
       );
+      if (promptNode) {
+        if (cell.cellType === "markdown") {
+          promptNode.textContent = "[md]";
+        } else if (typeof cell.executionCount === "number") {
+          promptNode.textContent = `[${cell.executionCount}]`;
+        } else {
+          promptNode.textContent = "[ ]";
+        }
+      }
       article.classList.toggle("is-next-up", Boolean(nextRunnableCell) && nextRunnableCell.id === cell.id);
       kindNode.textContent = cell.cellType === "markdown" ? "Markdown" : "Code";
       const statusParts = [cell.status];
@@ -3425,12 +3455,35 @@ function renderNotebook() {
           void startDebugSession(cell.id);
         }
       });
-      runButton.addEventListener("click", () => runCell(cell.id));
+      runButton.addEventListener("click", () => {
+        void initializeAndRunCell(cell.id);
+      });
       clearOutputButton.addEventListener("click", () => clearCellOutput(cell.id));
       deleteButton.addEventListener("click", () => deleteCell(cell.id));
       moveUpButton.disabled = index === 0;
       moveDownButton.disabled = index === notebook.cells.length - 1;
-      runButton.disabled = cell.cellType !== "code" || !canRunCell(cell.id) || notebookState.debug.active;
+      const currentCellRunning =
+        notebookState.execution.busy && notebookState.execution.currentCellId === cell.id;
+      const otherCellRunning =
+        notebookState.execution.busy && notebookState.execution.currentCellId !== cell.id;
+      runButton.disabled = cell.cellType !== "code" || currentCellRunning || otherCellRunning || notebookState.debug.active;
+      runButton.hidden = cell.cellType !== "code";
+      if (cell.cellType === "code") {
+        runButton.textContent = currentCellRunning
+          ? "Running"
+          : notebookState.runtimeReady
+            ? "Run"
+            : "Init & Run";
+        runButton.title = currentCellRunning
+          ? "This cell is currently running."
+          : otherCellRunning
+            ? "Another cell is currently running."
+            : notebookState.debug.active
+              ? "Finish or stop the current debug session before running a cell."
+              : notebookState.runtimeReady
+                ? "Run this code cell."
+                : "Initialize the embedded Python runtime, then run this code cell.";
+      }
       clearOutputButton.disabled = cell.cellType !== "code" || controlsLocked;
       toggleKindButton.disabled = controlsLocked;
       breakpointButton.disabled = cell.cellType !== "code" || controlsLocked;
@@ -3449,6 +3502,7 @@ function renderNotebook() {
       moveDownButton.addEventListener("click", () => moveCell(cell.id, 1));
       editor.addEventListener("focus", () => {
         notebookState.focusedCellId = cell.id;
+        renderNotebook();
       });
       editor.addEventListener("keydown", (event) => {
         if (cell.cellType !== "code") {
@@ -3457,9 +3511,24 @@ function renderNotebook() {
         if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
           event.preventDefault();
           if (event.shiftKey) {
-            void runCellAndAdvance(cell.id);
+            void initializeAndRunCell(cell.id).then(() => {
+              const notebookAfterRun = activeNotebook();
+              const currentIndex = notebookAfterRun
+                ? notebookAfterRun.cells.findIndex((entry) => entry.id === cell.id)
+                : -1;
+              if (!notebookAfterRun || currentIndex < 0) {
+                return;
+              }
+              const nextCodeCell = notebookAfterRun.cells
+                .slice(currentIndex + 1)
+                .find((entry) => entry.cellType === "code");
+              if (nextCodeCell) {
+                notebookState.focusedCellId = nextCodeCell.id;
+                focusCellEditor(nextCodeCell.id);
+              }
+            });
           } else {
-            void runCell(cell.id);
+            void initializeAndRunCell(cell.id);
           }
         }
       });
@@ -3541,6 +3610,99 @@ async function runSelectedPackageDemo() {
     return;
   }
   await runCell(cell.id);
+}
+
+async function initializeAndRunCell(cellId) {
+  if (!notebookState.runtimeReady) {
+    try {
+      await runtimeAdapter.initialize();
+    } catch (error) {
+      updateKernelState(`Runtime initialization failed: ${String(error.message || error)}`);
+      return;
+    }
+  }
+  await runCell(cellId);
+}
+
+async function runNotebookCells(cellIds, options = {}) {
+  const notebook = activeNotebook();
+  if (!notebook || notebookState.execution.busy || notebookState.debug.active) {
+    return;
+  }
+
+  const runnableCells = cellIds
+    .map((cellId) => notebook.cells.find((cell) => cell.id === cellId && cell.cellType === "code"))
+    .filter(Boolean);
+  if (!runnableCells.length) {
+    return;
+  }
+
+  if (!notebookState.runtimeReady) {
+    try {
+      await runtimeAdapter.initialize();
+    } catch (error) {
+      updateKernelState(`Runtime initialization failed: ${String(error.message || error)}`);
+      return;
+    }
+  }
+
+  const runningLabelPrefix = options.runningLabelPrefix || "Running selected cells";
+
+  for (const cell of runnableCells) {
+    beginExecution(cell.id, { runAll: runnableCells.length > 1 });
+    await executeCodeCell(cell, notebook, {
+      runningLabel: `${runningLabelPrefix} (cell ${cell.id})`,
+    });
+
+    if (notebookState.execution.interruptRequested) {
+      endExecution();
+      updateKernelState("Execution interrupted after the current cell completed.");
+      renderNotebook();
+      scheduleAutosave();
+      return;
+    }
+  }
+
+  endExecution();
+  updateKernelState("Runtime ready");
+  renderNotebook();
+  scheduleAutosave();
+}
+
+async function runActiveCell() {
+  const selected = selectedCodeCell();
+  if (!selected) {
+    return;
+  }
+  await initializeAndRunCell(selected.id);
+}
+
+async function runCellsAboveSelected() {
+  const notebook = activeNotebook();
+  const selected = selectedCodeCell(notebook);
+  if (!notebook || !selected) {
+    return;
+  }
+  const selectedIndex = notebook.cells.findIndex((cell) => cell.id === selected.id);
+  const cellIds = notebook.cells
+    .slice(0, selectedIndex)
+    .filter((cell) => cell.cellType === "code")
+    .map((cell) => cell.id);
+  await runNotebookCells(cellIds, { runningLabelPrefix: "Running cells above selected" });
+}
+
+async function runSelectedAndBelow() {
+  const notebook = activeNotebook();
+  const selected = selectedCodeCell(notebook);
+  if (!notebook || !selected) {
+    return;
+  }
+  const selectedIndex = notebook.cells.findIndex((cell) => cell.id === selected.id);
+  const cellIds = notebook.cells
+    .slice(selectedIndex)
+    .filter((cell) => cell.cellType === "code")
+    .map((cell) => cell.id);
+  await runNotebookCells(cellIds, { runningLabelPrefix: "Running selected cell and below" });
 }
 
 function duplicateCell(cellId) {
@@ -3689,6 +3851,51 @@ function nextRunnableNotebookCell(notebook) {
     return nextDebuggableCell(notebook, notebookState.execution.currentCellId);
   }
   return null;
+}
+
+function selectedCodeCell(notebook = activeNotebook()) {
+  if (!notebook) {
+    return null;
+  }
+  const focused = notebook.cells.find(
+    (cell) => cell.id === notebookState.focusedCellId && cell.cellType === "code",
+  );
+  if (focused) {
+    return focused;
+  }
+  return notebook.cells.find((cell) => cell.cellType === "code") || null;
+}
+
+function updateActiveCellToolbar() {
+  const indicator = document.getElementById("active-cell-indicator");
+  const runActiveButton = document.getElementById("run-active-cell");
+  const runAboveButton = document.getElementById("run-above-cell");
+  const runBelowButton = document.getElementById("run-below-cell");
+  const runAllButton = document.getElementById("run-all-cells-toolbar");
+  const notebook = activeNotebook();
+  const selected = selectedCodeCell(notebook);
+  const busy = notebookState.execution.busy;
+  const debugActive = notebookState.debug.active;
+
+  if (indicator) {
+    indicator.textContent = selected
+      ? `Active cell: ${selected.id} (${selected.status || "Idle"})`
+      : "Active cell: none";
+  }
+
+  const disableRunScopes = !selected || busy || debugActive;
+  if (runActiveButton) {
+    runActiveButton.disabled = disableRunScopes;
+  }
+  if (runAboveButton) {
+    runAboveButton.disabled = disableRunScopes;
+  }
+  if (runBelowButton) {
+    runBelowButton.disabled = disableRunScopes;
+  }
+  if (runAllButton) {
+    runAllButton.disabled = !notebook || busy || debugActive;
+  }
 }
 
 function renderDebugViewer() {
@@ -4211,6 +4418,18 @@ function wireEvents() {
     .getElementById("stop-debug")
     .addEventListener("click", () => stopDebugSession());
   document.getElementById("run-all").addEventListener("click", runAllCells);
+  document.getElementById("run-active-cell").addEventListener("click", () => {
+    void runActiveCell();
+  });
+  document.getElementById("run-above-cell").addEventListener("click", () => {
+    void runCellsAboveSelected();
+  });
+  document.getElementById("run-below-cell").addEventListener("click", () => {
+    void runSelectedAndBelow();
+  });
+  document.getElementById("run-all-cells-toolbar").addEventListener("click", () => {
+    void runAllCells();
+  });
   document
     .getElementById("new-notebook-sidebar")
     .addEventListener("click", createNewNotebook);
