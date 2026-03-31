@@ -28,6 +28,7 @@ const notebookState = {
   debug: {
     active: false,
     pausedCellId: null,
+    history: [],
   },
   execution: {
     busy: false,
@@ -2237,6 +2238,7 @@ function renderNotebook() {
     }),
   );
   syncExecutionUi();
+  renderDebugViewer();
 }
 
 function addCodeCell() {
@@ -2248,6 +2250,7 @@ function addCodeCell() {
   notebook.updatedAt = new Date().toISOString();
   renderNotebook();
   scheduleAutosave();
+  renderDebugViewer();
 }
 
 function addMarkdownCell() {
@@ -2369,6 +2372,7 @@ function pauseDebugAtCell(cellId, reason) {
   clearPausedDebugState();
   notebookState.debug.active = true;
   notebookState.debug.pausedCellId = cellId;
+  pushDebugHistory(reason);
   cell.status = "Paused";
   notebook.updatedAt = new Date().toISOString();
   updateKernelState(reason);
@@ -2380,9 +2384,66 @@ function stopDebugSession(message = "Debug session stopped") {
   clearPausedDebugState();
   notebookState.debug.active = false;
   notebookState.debug.pausedCellId = null;
+  pushDebugHistory(message);
   updateKernelState(message);
   renderNotebook();
   scheduleAutosave();
+  renderDebugViewer();
+}
+
+function pushDebugHistory(message) {
+  notebookState.debug.history.push(`${new Date().toLocaleTimeString()}  ${message}`);
+  if (notebookState.debug.history.length > 12) {
+    notebookState.debug.history = notebookState.debug.history.slice(-12);
+  }
+}
+
+function renderDebugViewer() {
+  const container = document.getElementById("debug-viewer");
+  if (!container) {
+    return;
+  }
+
+  const notebook = activeNotebook();
+  const breakpointCells = (notebook?.cells || []).filter((cell) => cell.cellType === "code" && cell.breakpoint);
+  const pausedCell = notebook?.cells.find((cell) => cell.id === notebookState.debug.pausedCellId);
+
+  const cards = [];
+  for (const [title, body] of [
+    [
+      "State",
+      notebookState.debug.active
+        ? pausedCell
+          ? `Paused at cell ${pausedCell.id}`
+          : "Debug session active"
+        : "Debugger idle",
+    ],
+    [
+      "Breakpoints",
+      breakpointCells.length
+        ? breakpointCells.map((cell) => `Cell ${cell.id}`).join("\n")
+        : "No breakpoints set.",
+    ],
+    [
+      "History",
+      notebookState.debug.history.length
+        ? notebookState.debug.history.join("\n")
+        : "No debug activity yet.",
+    ],
+  ]) {
+    const card = document.createElement("div");
+    card.className = "debug-card";
+    const titleNode = document.createElement("span");
+    titleNode.className = "debug-card-title";
+    titleNode.textContent = title;
+    const bodyNode = document.createElement("span");
+    bodyNode.className = "debug-card-body";
+    bodyNode.textContent = body;
+    card.append(titleNode, bodyNode);
+    cards.push(card);
+  }
+
+  container.replaceChildren(...cards);
 }
 
 function moveCell(cellId, offset) {
@@ -2523,6 +2584,9 @@ function toggleBreakpoint(cellId) {
   }
 
   cell.breakpoint = !cell.breakpoint;
+  pushDebugHistory(
+    `${cell.breakpoint ? "Enabled" : "Disabled"} breakpoint for cell ${cell.id}`,
+  );
   notebook.updatedAt = new Date().toISOString();
   renderNotebook();
   scheduleAutosave();
@@ -2559,6 +2623,7 @@ async function continueDebugSession() {
 
   const currentCell = notebook.cells[currentIndex];
   beginExecution(currentCell.id, { runAll: true });
+  pushDebugHistory(`Continue from cell ${currentCell.id}`);
   await executeCodeCell(currentCell, notebook, {
     runningLabel: `Debug continue (cell ${currentCell.id})`,
     successLabel: "Debug continue ready",
@@ -2577,6 +2642,7 @@ async function continueDebugSession() {
     }
 
     beginExecution(nextCell.id, { runAll: true });
+    pushDebugHistory(`Continue through cell ${nextCell.id}`);
     await executeCodeCell(nextCell, notebook, {
       runningLabel: `Debug continue (cell ${nextCell.id})`,
       successLabel: "Debug continue ready",
@@ -2604,6 +2670,7 @@ async function stepDebugSession() {
   clearPausedDebugState();
   notebookState.debug.pausedCellId = null;
   beginExecution(cell.id, { runAll: false });
+  pushDebugHistory(`Step cell ${cell.id}`);
   await executeCodeCell(cell, notebook, {
     runningLabel: `Debug step (cell ${cell.id})`,
     successLabel: "Debug step ready",
@@ -2962,6 +3029,7 @@ function bootstrap() {
   renderVariableViewer([]);
   renderVariableDetail(null);
   renderWatchViewer([]);
+  renderDebugViewer();
   renderWorkspaceFileEditor();
   renderTerminalOutput();
   wireEvents();

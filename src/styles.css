@@ -273,6 +273,34 @@ button.danger {
   background: rgba(255, 255, 255, 0.02);
 }
 
+.debug-viewer {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.debug-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.9rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.debug-card-title {
+  display: block;
+  margin-bottom: 0.45rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.debug-card-body {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--mono);
+}
+
 .variable-detail-viewer {
   display: grid;
   gap: 0.7rem;
