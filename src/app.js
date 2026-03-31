@@ -3263,11 +3263,13 @@ function pauseDebugAtCell(cellId, reason) {
   clearPausedDebugState();
   notebookState.debug.active = true;
   notebookState.debug.pausedCellId = cellId;
+  notebookState.focusedCellId = cellId;
   pushDebugHistory(reason);
   cell.status = "Paused";
   notebook.updatedAt = new Date().toISOString();
   updateKernelState(reason);
   renderNotebook();
+  focusCellEditor(cellId);
   scheduleAutosave();
 }
 
