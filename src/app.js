@@ -3082,6 +3082,7 @@ function renderNotebook() {
       const insertBelowButton = fragment.querySelector(".insert-below");
       const duplicateButton = fragment.querySelector(".duplicate-cell");
       const debugButton = fragment.querySelector(".debug-cell");
+      const runToCellButton = fragment.querySelector(".run-to-cell");
       const runButton = fragment.querySelector(".run-cell");
       const clearOutputButton = fragment.querySelector(".clear-output");
       const deleteButton = fragment.querySelector(".delete-cell");
@@ -3130,6 +3131,14 @@ function renderNotebook() {
         notebookState.focusedCellId = cell.id;
         void startDebugSession(cell.id);
       });
+      runToCellButton.addEventListener("click", () => {
+        notebookState.focusedCellId = cell.id;
+        if (notebookState.debug.active) {
+          void continueDebugSession(cell.id);
+        } else {
+          void startDebugSession(cell.id);
+        }
+      });
       runButton.addEventListener("click", () => runCell(cell.id));
       clearOutputButton.addEventListener("click", () => clearCellOutput(cell.id));
       deleteButton.addEventListener("click", () => deleteCell(cell.id));
@@ -3143,6 +3152,9 @@ function renderNotebook() {
       insertBelowButton.disabled = controlsLocked;
       duplicateButton.disabled = controlsLocked;
       debugButton.disabled = cell.cellType !== "code" || controlsLocked;
+      runToCellButton.disabled = cell.cellType !== "code"
+        || notebookState.execution.busy
+        || (notebookState.debug.active && notebookState.debug.pausedCellId === cell.id);
       deleteButton.disabled = controlsLocked;
       moveUpButton.disabled = moveUpButton.disabled || controlsLocked;
       moveDownButton.disabled = moveDownButton.disabled || controlsLocked;
@@ -3614,7 +3626,7 @@ async function startDebugSession(preferredCellId = notebookState.focusedCellId) 
   pauseDebugAtCell(startCell.id, `Debugger paused before cell ${startCell.id}.`);
 }
 
-async function continueDebugSession() {
+async function continueDebugSession(stopAtCellId = null) {
   const notebook = activeNotebook();
   if (!notebook || notebookState.execution.busy || !notebookState.debug.pausedCellId) {
     return;
@@ -3631,7 +3643,11 @@ async function continueDebugSession() {
 
   const currentCell = notebook.cells[currentIndex];
   beginExecution(currentCell.id, { runAll: true });
-  pushDebugHistory(`Continue from cell ${currentCell.id}`);
+  pushDebugHistory(
+    stopAtCellId
+      ? `Continue from cell ${currentCell.id} to cell ${stopAtCellId}`
+      : `Continue from cell ${currentCell.id}`,
+  );
   await executeCodeCell(currentCell, notebook, {
     runningLabel: `Debug continue (cell ${currentCell.id})`,
     successLabel: "Debug continue ready",
@@ -3643,6 +3659,10 @@ async function continueDebugSession() {
     const nextCell = notebook.cells[nextIndex];
     if (nextCell.cellType !== "code") {
       continue;
+    }
+    if (stopAtCellId && nextCell.id === stopAtCellId) {
+      pauseDebugAtCell(nextCell.id, `Debugger paused at target cell ${nextCell.id}.`);
+      return;
     }
     if (nextCell.breakpoint) {
       pauseDebugAtCell(nextCell.id, `Debugger paused at breakpoint in cell ${nextCell.id}.`);
