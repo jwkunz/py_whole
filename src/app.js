@@ -335,11 +335,11 @@ json.dumps(results)
 
   async installNotebookHelpers() {
     this.pyodide.registerJsModule("pywhole_bridge", {
-      push_output(payload) {
+      push_output_json(payloadJson) {
         if (!globalThis.__pyWholeDisplayOutputs) {
           globalThis.__pyWholeDisplayOutputs = [];
         }
-        globalThis.__pyWholeDisplayOutputs.push(payload);
+        globalThis.__pyWholeDisplayOutputs.push(JSON.parse(payloadJson));
       },
     });
 
@@ -347,11 +347,15 @@ json.dumps(results)
 import ast
 import base64
 import __main__
+import json
 import os
-from pywhole_bridge import push_output
+from pywhole_bridge import push_output_json
 
 os.environ["MPLBACKEND"] = "Agg"
 os.environ["DISPLAY"] = ""
+
+def _pywhole_push_output(payload):
+    push_output_json(json.dumps(payload))
 
 def _pywhole_capture_display(value):
     if value is None:
@@ -360,13 +364,13 @@ def _pywhole_capture_display(value):
     if hasattr(value, "_repr_html_"):
         html = value._repr_html_()
         if html:
-            push_output({"kind": "html", "html": str(html)})
+            _pywhole_push_output({"kind": "html", "html": str(html)})
             return
 
     if hasattr(value, "_repr_svg_"):
         svg = value._repr_svg_()
         if svg:
-            push_output({"kind": "svg", "svg": str(svg)})
+            _pywhole_push_output({"kind": "svg", "svg": str(svg)})
             return
 
     if hasattr(value, "_repr_png_"):
@@ -375,7 +379,7 @@ def _pywhole_capture_display(value):
             if isinstance(png, memoryview):
                 png = png.tobytes()
             encoded = base64.b64encode(png).decode("ascii")
-            push_output({"kind": "image", "mime": "image/png", "data": encoded})
+            _pywhole_push_output({"kind": "image", "mime": "image/png", "data": encoded})
             return
 
     if "matplotlib" in globals():
@@ -387,7 +391,7 @@ def _pywhole_capture_display(value):
                 buffer = io.BytesIO()
                 figure.savefig(buffer, format="png", bbox_inches="tight")
                 encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-                push_output({"kind": "image", "mime": "image/png", "data": encoded})
+                _pywhole_push_output({"kind": "image", "mime": "image/png", "data": encoded})
             if figures:
                 plt.close("all")
                 return
@@ -396,8 +400,7 @@ def _pywhole_capture_display(value):
 
     if isinstance(value, (dict, list, tuple)):
         try:
-            import json
-            push_output({"kind": "json", "data": json.dumps(value, indent=2, default=str)})
+            _pywhole_push_output({"kind": "json", "data": json.dumps(value, indent=2, default=str)})
             return
         except Exception:
             pass
@@ -405,16 +408,16 @@ def _pywhole_capture_display(value):
     if hasattr(value, "_repr_markdown_"):
         markdown = value._repr_markdown_()
         if markdown:
-            push_output({"kind": "markdown", "markdown": str(markdown)})
+            _pywhole_push_output({"kind": "markdown", "markdown": str(markdown)})
             return
 
     if hasattr(value, "_repr_latex_"):
         latex = value._repr_latex_()
         if latex:
-            push_output({"kind": "latex", "latex": str(latex)})
+            _pywhole_push_output({"kind": "latex", "latex": str(latex)})
             return
 
-    push_output({"kind": "stream", "name": "stdout", "text": str(value)})
+    _pywhole_push_output({"kind": "stream", "name": "stdout", "text": str(value)})
 
 def _pywhole_capture_figures():
     try:
@@ -432,7 +435,7 @@ def _pywhole_capture_figures():
         buffer = io.BytesIO()
         figure.savefig(buffer, format="png", bbox_inches="tight")
         encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-        push_output({"kind": "image", "mime": "image/png", "data": encoded})
+        _pywhole_push_output({"kind": "image", "mime": "image/png", "data": encoded})
     plt.close("all")
 
 def _pywhole_patch_matplotlib():
@@ -4061,6 +4064,20 @@ function handleGlobalDebugShortcut(event) {
   return false;
 }
 
+function wireCommandMirrors() {
+  document.querySelectorAll("[data-command]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const commandId = button.dataset.command;
+      const target = commandId ? document.getElementById(commandId) : null;
+      if (!target || target === button) {
+        return;
+      }
+      target.click();
+      button.closest("details")?.removeAttribute("open");
+    });
+  });
+}
+
 function wireEvents() {
   document
     .getElementById("initialize-runtime")
@@ -4334,8 +4351,18 @@ function wireEvents() {
       notebookState.panelVisibility[targetId] = shouldHide;
       applyPanelVisibility();
       scheduleAutosave();
+      button.closest(".menu-group")?.removeAttribute("open");
     });
   });
+  document.addEventListener("click", (event) => {
+    if (event.target.closest(".menu-group")) {
+      return;
+    }
+    document.querySelectorAll(".menu-group[open]").forEach((menu) => {
+      menu.removeAttribute("open");
+    });
+  });
+  wireCommandMirrors();
 }
 
 function createNewNotebook() {

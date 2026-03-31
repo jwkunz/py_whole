@@ -15,7 +15,7 @@ __INLINE_CSS__
     <div id="app-error-banner" class="app-error-banner is-hidden" role="alert"></div>
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="brand-block">
+        <div class="brand-block brand-block-sidebar">
           <p class="eyebrow">Offline Notebook</p>
           <h1>py_whole</h1>
           <p class="brand-copy">
@@ -47,21 +47,10 @@ __INLINE_CSS__
               <dd>Single HTML</dd>
             </div>
           </dl>
-          <div class="button-row">
-            <button id="initialize-runtime">Initialize Runtime</button>
-            <button id="restart-runtime" class="secondary">Restart</button>
-            <button id="interrupt-runtime" class="secondary">Interrupt</button>
-          </div>
         </section>
 
         <section class="panel">
           <h2>Workspace</h2>
-          <div class="button-row">
-            <button id="new-notebook-sidebar">New Notebook</button>
-            <button id="rename-notebook" class="secondary">Rename Notebook</button>
-            <button id="duplicate-notebook" class="secondary">Duplicate Notebook</button>
-            <button id="delete-notebook" class="danger">Delete Notebook</button>
-          </div>
           <input
             id="workspace-filter-input"
             class="panel-filter"
@@ -74,11 +63,6 @@ __INLINE_CSS__
 
         <section class="panel">
           <h2>Files</h2>
-          <div class="button-row">
-            <button id="import-file">Import File</button>
-            <button id="new-file" class="secondary">New File</button>
-            <button id="new-folder" class="secondary">New Folder</button>
-          </div>
           <input
             id="workspace-file-filter-input"
             class="panel-filter"
@@ -89,8 +73,8 @@ __INLINE_CSS__
           <div id="workspace-files" class="workspace-tree"></div>
         </section>
 
-        <section class="panel">
-          <h2>File Editor</h2>
+        <details class="panel panel-collapsible">
+          <summary class="panel-summary">File Editor</summary>
           <div id="workspace-file-editor-meta" class="panel-copy">
             Select a text file to edit it.
           </div>
@@ -108,10 +92,10 @@ __INLINE_CSS__
             <button id="save-workspace-file" class="secondary">Save File</button>
             <button id="revert-workspace-file" class="secondary">Revert</button>
           </div>
-        </section>
+        </details>
 
-        <section class="panel">
-          <h2>Packages</h2>
+        <details class="panel panel-collapsible">
+          <summary class="panel-summary">Packages</summary>
           <p class="panel-copy">
             Target scientific stack for the embedded runtime:
           </p>
@@ -122,10 +106,10 @@ __INLINE_CSS__
             <button id="insert-package-demo" class="secondary">Insert Demo</button>
             <button id="run-package-demo" class="secondary">Run Demo</button>
           </div>
-        </section>
+        </details>
 
-        <section class="panel">
-          <h2>Runtime Check</h2>
+        <details class="panel panel-collapsible">
+          <summary class="panel-summary">Runtime Check</summary>
           <p class="panel-copy">
             Verify the embedded scientific stack and matplotlib backend on this device.
           </p>
@@ -135,20 +119,92 @@ __INLINE_CSS__
             <button id="insert-runtime-report" class="secondary">Insert Report</button>
           </div>
           <div id="runtime-diagnostics" class="runtime-diagnostics"></div>
-        </section>
+        </details>
 
-        <section class="panel">
-          <h2>Help</h2>
+        <details class="panel panel-collapsible">
+          <summary class="panel-summary">Help</summary>
           <p class="panel-copy">
             Runtime execution is fully local. Interrupt requests stop
             queued execution after the current cell finishes because the
             embedded Pyodide runtime is executing in-page.
           </p>
-        </section>
+        </details>
       </aside>
 
       <main class="workspace-shell">
         <section class="workspace">
+        <header class="notebook-frame-header">
+          <div class="brand-block brand-block-main">
+            <p class="eyebrow">Notebook</p>
+            <h1>py_whole</h1>
+          </div>
+          <nav class="menu-bar" aria-label="Notebook menu">
+            <details class="menu-group">
+              <summary>File</summary>
+              <div class="menu-panel">
+                <button id="open-launcher" class="menu-action secondary" type="button">Launcher</button>
+                <button id="new-notebook-sidebar" class="menu-action secondary" type="button">New Notebook</button>
+                <button id="import-notebook" class="menu-action secondary" type="button">Import Notebook</button>
+                <button id="export-notebook" class="menu-action secondary" type="button">Export Notebook</button>
+                <button id="import-file" class="menu-action secondary" type="button">Import Files</button>
+                <button id="new-file" class="menu-action secondary" type="button">New File</button>
+                <button id="new-folder" class="menu-action secondary" type="button">New Folder</button>
+                <button id="rename-notebook" class="menu-action secondary" type="button">Rename Notebook</button>
+                <button id="duplicate-notebook" class="menu-action secondary" type="button">Duplicate Notebook</button>
+                <button id="delete-notebook" class="menu-action danger" type="button">Delete Notebook</button>
+              </div>
+            </details>
+            <details class="menu-group">
+              <summary>Edit</summary>
+              <div class="menu-panel">
+                <button id="add-code-cell" class="menu-action secondary" type="button">Add Code Cell</button>
+                <button id="add-markdown-cell" class="menu-action secondary" type="button">Add Markdown Cell</button>
+                <button id="clear-all-outputs" class="menu-action secondary" type="button">Clear Outputs</button>
+                <button id="clear-recovery" class="menu-action secondary" type="button">Clear Recovery</button>
+                <button class="menu-action secondary" type="button" data-command="copy-package-import">Copy Package Import</button>
+                <button class="menu-action secondary" type="button" data-command="insert-package-demo">Insert Package Demo</button>
+                <button class="menu-action secondary" type="button" data-command="run-package-demo">Run Package Demo</button>
+                <button class="menu-action secondary" type="button" data-command="insert-runtime-report">Insert Runtime Report</button>
+              </div>
+            </details>
+            <details class="menu-group">
+              <summary>Kernel</summary>
+              <div class="menu-panel">
+                <button id="initialize-runtime" class="menu-action secondary" type="button">Initialize Runtime</button>
+                <button id="restart-runtime" class="menu-action secondary" type="button">Restart Runtime</button>
+                <button id="interrupt-runtime" class="menu-action secondary" type="button">Interrupt Runtime</button>
+                <button id="run-all" class="menu-action secondary" type="button">Run All Cells</button>
+                <button id="interrupt-run" class="menu-action secondary" type="button">Interrupt Run</button>
+                <button id="start-debug" class="menu-action secondary" type="button">Debug</button>
+                <button id="continue-debug" class="menu-action secondary" type="button">Continue</button>
+                <button id="step-debug" class="menu-action secondary" type="button">Step</button>
+                <button id="stop-debug" class="menu-action secondary" type="button">Stop</button>
+              </div>
+            </details>
+            <details class="menu-group">
+              <summary>Preferences</summary>
+              <div class="menu-panel">
+                <button class="menu-action secondary panel-toggle" data-panel-target="variable-viewer" type="button">Toggle Variables</button>
+                <button class="menu-action secondary panel-toggle" data-panel-target="variable-detail-viewer" type="button">Toggle Inspector</button>
+                <button class="menu-action secondary panel-toggle" data-panel-target="watch-viewer" type="button">Toggle Watch</button>
+                <button class="menu-action secondary panel-toggle" data-panel-target="debug-viewer" type="button">Toggle Debug</button>
+                <button class="menu-action secondary panel-toggle" data-panel-target="terminal-output" type="button">Toggle Terminal</button>
+                <button id="add-watch" class="menu-action secondary" type="button">Add Watch</button>
+                <button class="menu-action secondary" type="button" data-command="launcher-open-terminal">Open Console</button>
+              </div>
+            </details>
+            <details class="menu-group">
+              <summary>Help</summary>
+              <div class="menu-panel">
+                <button class="menu-action secondary" type="button" data-command="run-runtime-diagnostics">Run Runtime Check</button>
+                <button class="menu-action secondary" type="button" data-command="copy-runtime-diagnostics">Copy Runtime Report</button>
+                <button class="menu-action secondary" type="button" data-command="launcher-run-runtime-check">Runtime Check View</button>
+                <button class="menu-action secondary" type="button" data-command="launcher-insert-runtime-report">Insert Runtime Report</button>
+                <button class="menu-action secondary" type="button" data-command="launcher-copy-runtime-report">Copy Runtime Report</button>
+              </div>
+            </details>
+          </nav>
+        </header>
         <section id="document-tabs" class="document-tabs"></section>
 
         <header class="workspace-header">
@@ -165,17 +221,12 @@ __INLINE_CSS__
               />
             </label>
           </div>
-          <div class="button-row">
-            <button id="import-notebook" class="secondary">Import .ipynb</button>
-            <button id="export-notebook" class="secondary">Export .ipynb</button>
-            <button id="add-code-cell">Add Code Cell</button>
-            <button id="start-debug" class="secondary">Debug</button>
-            <button id="continue-debug" class="secondary">Continue</button>
-            <button id="step-debug" class="secondary">Step</button>
-            <button id="stop-debug" class="secondary">Stop</button>
-            <button id="clear-all-outputs" class="secondary">Clear Outputs</button>
-            <button id="interrupt-run" class="secondary">Interrupt</button>
-            <button id="run-all" class="secondary">Run All</button>
+          <div class="button-row compact-toolbar">
+            <button id="toolbar-initialize-runtime" class="secondary" type="button" data-command="initialize-runtime">Initialize</button>
+            <button id="toolbar-add-code-cell" type="button" data-command="add-code-cell">Code</button>
+            <button id="toolbar-add-markdown-cell" class="secondary" type="button" data-command="add-markdown-cell">Markdown</button>
+            <button id="toolbar-run-all" class="secondary" type="button" data-command="run-all">Run All</button>
+            <button id="toolbar-interrupt-run" class="secondary" type="button" data-command="interrupt-run">Interrupt</button>
           </div>
         </header>
 
@@ -207,11 +258,7 @@ __INLINE_CSS__
             <strong>Autosave:</strong> notebooks persist in browser storage and
             recover on reload.
           </div>
-          <div class="button-row">
-            <button id="open-launcher" class="secondary">Launcher</button>
-            <button id="add-markdown-cell" class="secondary">Add Markdown Cell</button>
-            <button id="clear-recovery" class="secondary">Clear Recovery</button>
-          </div>
+          <div class="toolbar-hint">Secondary actions live in the menus above.</div>
         </section>
 
         <section id="launcher-surface" class="launcher-surface is-hidden">

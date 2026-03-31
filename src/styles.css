@@ -110,6 +110,78 @@ button.danger {
   padding: 1.5rem;
 }
 
+.notebook-frame-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.brand-block-sidebar h1 {
+  font-size: 1.7rem;
+}
+
+.brand-block-main {
+  margin-bottom: 0;
+}
+
+.brand-block-main h1 {
+  font-size: 1.3rem;
+}
+
+.menu-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.menu-group {
+  position: relative;
+}
+
+.menu-group summary {
+  list-style: none;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.45rem 0.7rem;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text);
+}
+
+.menu-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.menu-group[open] summary {
+  background: rgba(93, 228, 199, 0.12);
+  border-color: rgba(93, 228, 199, 0.35);
+}
+
+.menu-panel {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  min-width: 220px;
+  z-index: 30;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+}
+
+.menu-action {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+}
+
 .inspector-rail {
   padding: 1.5rem 1.5rem 1.5rem 0;
   border-left: 1px solid var(--border);
@@ -270,6 +342,26 @@ button.danger {
 .panel {
   padding: 1rem;
   margin-bottom: 1rem;
+}
+
+.panel-collapsible {
+  padding: 0;
+  overflow: hidden;
+}
+
+.panel-summary {
+  cursor: pointer;
+  padding: 1rem;
+  font-weight: 700;
+  list-style: none;
+}
+
+.panel-summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel-collapsible > :not(summary) {
+  padding: 0 1rem 1rem;
 }
 
 .panel h2 {
@@ -776,27 +868,31 @@ button.danger {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  background: rgba(10, 22, 36, 0.64);
 }
 
 .notebook-meta {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
   margin-bottom: 1rem;
 }
 
 .meta-card {
-  padding: 0.9rem 1rem;
-  background: var(--surface-muted);
+  padding: 0.55rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: none;
 }
 
 .meta-label {
-  display: block;
-  margin-bottom: 0.35rem;
+  display: inline;
+  margin-bottom: 0;
+  margin-right: 0.35rem;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.74rem;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
 }
 
 .meta-value {
@@ -815,6 +911,15 @@ button.danger {
 
 .toolbar-copy {
   color: var(--muted);
+}
+
+.toolbar-hint {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.compact-toolbar button {
+  padding: 0.55rem 0.8rem;
 }
 
 .file-surface-card {
