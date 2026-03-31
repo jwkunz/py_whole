@@ -3270,6 +3270,29 @@ function pushDebugHistory(message) {
   }
 }
 
+function formatDebugCellSummary(cell) {
+  if (!cell) {
+    return "None";
+  }
+
+  const source = String(cell.source || "").trim();
+  const preview = source
+    ? source.split("\n").slice(0, 3).join("\n")
+    : "(empty cell)";
+  return `Cell ${cell.id}\nType: ${cell.cellType}\nStatus: ${cell.status || "Idle"}\n\n${preview}`;
+}
+
+function nextDebuggableCell(notebook, currentCellId) {
+  if (!notebook || !currentCellId) {
+    return null;
+  }
+  const currentIndex = notebook.cells.findIndex((cell) => cell.id === currentCellId);
+  if (currentIndex < 0) {
+    return null;
+  }
+  return notebook.cells.slice(currentIndex + 1).find((cell) => cell.cellType === "code") || null;
+}
+
 function renderDebugViewer() {
   const container = document.getElementById("debug-viewer");
   if (!container) {
@@ -3279,6 +3302,12 @@ function renderDebugViewer() {
   const notebook = activeNotebook();
   const breakpointCells = (notebook?.cells || []).filter((cell) => cell.cellType === "code" && cell.breakpoint);
   const pausedCell = notebook?.cells.find((cell) => cell.id === notebookState.debug.pausedCellId);
+  const nextCell = nextDebuggableCell(notebook, notebookState.debug.pausedCellId);
+  const shortcutHelp = [
+    "F5  Start or continue",
+    "F10 Step",
+    "Shift+F5 Stop",
+  ].join("\n");
 
   const cards = [];
   for (const [title, body] of [
@@ -3291,10 +3320,22 @@ function renderDebugViewer() {
         : "Debugger idle",
     ],
     [
+      "Current Cell",
+      pausedCell ? formatDebugCellSummary(pausedCell) : "No paused cell.",
+    ],
+    [
+      "Next Cell",
+      nextCell ? formatDebugCellSummary(nextCell) : "No further code cell queued.",
+    ],
+    [
       "Breakpoints",
       breakpointCells.length
-        ? breakpointCells.map((cell) => `Cell ${cell.id}`).join("\n")
+        ? breakpointCells.map((cell) => `Cell ${cell.id}  ${cell.status || "Idle"}`).join("\n")
         : "No breakpoints set.",
+    ],
+    [
+      "Shortcuts",
+      shortcutHelp,
     ],
     [
       "History",
