@@ -25,6 +25,10 @@ const notebookState = {
   workspaceFileDraft: "",
   terminalEntries: [],
   watches: [],
+  debug: {
+    active: false,
+    pausedCellId: null,
+  },
   execution: {
     busy: false,
     currentCellId: null,
@@ -661,6 +665,9 @@ function updateSaveState(text) {
 function executionStatusText() {
   const { busy, currentCellId, runAll } = notebookState.execution;
   if (!busy) {
+    if (notebookState.debug.active && notebookState.debug.pausedCellId) {
+      return `Debug paused at cell ${notebookState.debug.pausedCellId}`;
+    }
     return "Idle";
   }
   if (currentCellId === "terminal") {
@@ -683,6 +690,7 @@ function interruptStatusText() {
 
 function syncExecutionUi() {
   const { busy, currentCellId, interruptRequested } = notebookState.execution;
+  const locked = busy || notebookState.debug.active;
   const executionText = executionStatusText();
   const canInterrupt = busy && !interruptRequested;
 
@@ -696,6 +704,10 @@ function syncExecutionUi() {
     document.getElementById("interrupt-runtime"),
     document.getElementById("interrupt-run"),
   ];
+  const debugStartButton = document.getElementById("start-debug");
+  const debugContinueButton = document.getElementById("continue-debug");
+  const debugStepButton = document.getElementById("step-debug");
+  const debugStopButton = document.getElementById("stop-debug");
 
   for (const button of interruptButtons) {
     if (button) {
@@ -721,13 +733,25 @@ function syncExecutionUi() {
     document.getElementById("terminal-input"),
   ]) {
     if (control) {
-      control.disabled = busy;
+      control.disabled = locked;
     }
   }
 
   const initButton = document.getElementById("initialize-runtime");
   if (initButton) {
-    initButton.disabled = busy || notebookState.runtimeReady;
+    initButton.disabled = locked || notebookState.runtimeReady;
+  }
+  if (debugStartButton) {
+    debugStartButton.disabled = busy || notebookState.debug.active;
+  }
+  if (debugContinueButton) {
+    debugContinueButton.disabled = busy || !notebookState.debug.active || !notebookState.debug.pausedCellId;
+  }
+  if (debugStepButton) {
+    debugStepButton.disabled = busy || !notebookState.debug.active || !notebookState.debug.pausedCellId;
+  }
+  if (debugStopButton) {
+    debugStopButton.disabled = busy || !notebookState.debug.active;
   }
 
   document.querySelectorAll(".workspace-item").forEach((item) => {
@@ -736,6 +760,11 @@ function syncExecutionUi() {
   document.querySelectorAll(".cell").forEach((cellNode) => {
     const cellId = Number(cellNode.dataset.cellId);
     cellNode.classList.toggle("is-running", busy && currentCellId === cellId);
+    cellNode.classList.toggle("has-breakpoint", cellNode.dataset.breakpoint === "true");
+    cellNode.classList.toggle(
+      "is-debug-paused",
+      notebookState.debug.active && notebookState.debug.pausedCellId === cellId,
+    );
     cellNode.classList.toggle(
       "is-interrupt-pending",
       busy && currentCellId === cellId && interruptRequested,
@@ -882,6 +911,7 @@ function createCodeCell(source, output = "") {
   return {
     id: nextCellId++,
     cellType: "code",
+    breakpoint: false,
     source,
     outputs: output ? [createStreamOutput(output)] : [],
     executionCount: null,
@@ -893,6 +923,7 @@ function createMarkdownCell(source) {
   return {
     id: nextCellId++,
     cellType: "markdown",
+    breakpoint: false,
     source,
     outputs: [],
     executionCount: null,
@@ -904,6 +935,7 @@ function cloneCell(cell) {
   return {
     id: nextCellId++,
     cellType: cell.cellType,
+    breakpoint: Boolean(cell.breakpoint),
     source: cell.source,
     outputs: (cell.outputs || []).map((output) => ({ ...output })),
     executionCount: cell.cellType === "code" ? cell.executionCount : null,
@@ -1004,7 +1036,11 @@ function buildIpynbDocument() {
     cells: cells.map((cell) => ({
       cell_type: cell.cellType,
       execution_count: cell.cellType === "code" ? cell.executionCount : null,
-      metadata: {},
+      metadata: {
+        py_whole: {
+          breakpoint: Boolean(cell.breakpoint),
+        },
+      },
       outputs:
         cell.cellType === "code" ? serializeOutputs(cell.outputs) : [],
       source: splitLines(cell.source),
@@ -1211,6 +1247,7 @@ function applyImportedNotebook(document, titleHint) {
     ? importedCells.map((cell) => ({
         id: nextCellId++,
         cellType: cell.cell_type === "markdown" ? "markdown" : "code",
+        breakpoint: Boolean(cell.metadata?.py_whole?.breakpoint),
         source: joinNotebookSource(cell.source),
         outputs: parseOutputs(cell.outputs),
         executionCount: cell.execution_count ?? null,
@@ -1246,6 +1283,7 @@ function hydrateNotebookRecord(entry) {
     ? importedCells.map((cell) => ({
         id: nextCellId++,
         cellType: cell.cell_type === "markdown" ? "markdown" : "code",
+        breakpoint: Boolean(cell.metadata?.py_whole?.breakpoint),
         source: joinNotebookSource(cell.source),
         outputs: parseOutputs(cell.outputs),
         executionCount: cell.execution_count ?? null,
@@ -2109,6 +2147,7 @@ function renderNotebook() {
 
   cellsRoot.replaceChildren(
     ...notebook.cells.map((cell, index) => {
+      const controlsLocked = notebookState.execution.busy || notebookState.debug.active;
       const fragment = template.content.cloneNode(true);
       const article = fragment.querySelector(".cell");
       const kindNode = fragment.querySelector(".cell-kind");
@@ -2120,6 +2159,7 @@ function renderNotebook() {
       const outputBlock = fragment.querySelector(".output-block");
       const outputList = fragment.querySelector(".cell-output-list");
       const toggleKindButton = fragment.querySelector(".toggle-kind");
+      const breakpointButton = fragment.querySelector(".toggle-breakpoint");
       const insertBelowButton = fragment.querySelector(".insert-below");
       const duplicateButton = fragment.querySelector(".duplicate-cell");
       const runButton = fragment.querySelector(".run-cell");
@@ -2129,6 +2169,7 @@ function renderNotebook() {
       const moveDownButton = fragment.querySelector(".move-down");
 
       article.dataset.cellId = String(cell.id);
+      article.dataset.breakpoint = String(Boolean(cell.breakpoint));
       article.classList.toggle(
         "is-running",
         notebookState.execution.busy && notebookState.execution.currentCellId === cell.id,
@@ -2140,7 +2181,7 @@ function renderNotebook() {
           notebookState.execution.interruptRequested,
       );
       kindNode.textContent = cell.cellType === "markdown" ? "Markdown" : "Code";
-      statusNode.textContent = cell.status;
+      statusNode.textContent = cell.breakpoint ? `${cell.status} • Breakpoint` : cell.status;
       editorModeLabel.textContent = cell.cellType === "markdown" ? "Markdown" : "Python";
       editor.value = cell.source;
       markdownPreviewBlock.classList.toggle("is-hidden", cell.cellType !== "markdown");
@@ -2150,6 +2191,7 @@ function renderNotebook() {
       }
       renderCellOutputs(outputList, cell.outputs);
       toggleKindButton.addEventListener("click", () => toggleCellType(cell.id));
+      breakpointButton.addEventListener("click", () => toggleBreakpoint(cell.id));
       insertBelowButton.addEventListener("click", () => insertCellBelow(cell.id));
       duplicateButton.addEventListener("click", () => duplicateCell(cell.id));
       runButton.addEventListener("click", () => runCell(cell.id));
@@ -2157,15 +2199,17 @@ function renderNotebook() {
       deleteButton.addEventListener("click", () => deleteCell(cell.id));
       moveUpButton.disabled = index === 0;
       moveDownButton.disabled = index === notebook.cells.length - 1;
-      runButton.disabled = cell.cellType !== "code" || !canRunCell(cell.id);
-      clearOutputButton.disabled = cell.cellType !== "code" || notebookState.execution.busy;
-      toggleKindButton.disabled = notebookState.execution.busy;
-      insertBelowButton.disabled = notebookState.execution.busy;
-      duplicateButton.disabled = notebookState.execution.busy;
-      deleteButton.disabled = notebookState.execution.busy;
-      moveUpButton.disabled = moveUpButton.disabled || notebookState.execution.busy;
-      moveDownButton.disabled = moveDownButton.disabled || notebookState.execution.busy;
-      editor.disabled = notebookState.execution.busy;
+      runButton.disabled = cell.cellType !== "code" || !canRunCell(cell.id) || notebookState.debug.active;
+      clearOutputButton.disabled = cell.cellType !== "code" || controlsLocked;
+      toggleKindButton.disabled = controlsLocked;
+      breakpointButton.disabled = cell.cellType !== "code" || controlsLocked;
+      breakpointButton.textContent = cell.breakpoint ? "Breakpoint On" : "Breakpoint";
+      insertBelowButton.disabled = controlsLocked;
+      duplicateButton.disabled = controlsLocked;
+      deleteButton.disabled = controlsLocked;
+      moveUpButton.disabled = moveUpButton.disabled || controlsLocked;
+      moveDownButton.disabled = moveDownButton.disabled || controlsLocked;
+      editor.disabled = controlsLocked;
       moveUpButton.addEventListener("click", () => moveCell(cell.id, -1));
       moveDownButton.addEventListener("click", () => moveCell(cell.id, 1));
       editor.addEventListener("focus", () => {
@@ -2303,6 +2347,44 @@ function clearAllOutputs() {
   scheduleAutosave();
 }
 
+function clearPausedDebugState() {
+  const notebook = activeNotebook();
+  if (!notebook) {
+    return;
+  }
+  for (const cell of notebook.cells) {
+    if (cell.status === "Paused") {
+      cell.status = "Idle";
+    }
+  }
+}
+
+function pauseDebugAtCell(cellId, reason) {
+  const notebook = activeNotebook();
+  const cell = notebook && notebook.cells.find((entry) => entry.id === cellId);
+  if (!cell) {
+    return;
+  }
+
+  clearPausedDebugState();
+  notebookState.debug.active = true;
+  notebookState.debug.pausedCellId = cellId;
+  cell.status = "Paused";
+  notebook.updatedAt = new Date().toISOString();
+  updateKernelState(reason);
+  renderNotebook();
+  scheduleAutosave();
+}
+
+function stopDebugSession(message = "Debug session stopped") {
+  clearPausedDebugState();
+  notebookState.debug.active = false;
+  notebookState.debug.pausedCellId = null;
+  updateKernelState(message);
+  renderNotebook();
+  scheduleAutosave();
+}
+
 function moveCell(cellId, offset) {
   const notebook = activeNotebook();
   if (!notebook) {
@@ -2343,6 +2425,35 @@ function toggleCellType(cellId) {
   scheduleAutosave();
 }
 
+async function executeCodeCell(cell, notebook, options = {}) {
+  const runningLabel = options.runningLabel || `Running cell ${cell.id}`;
+  const successLabel = options.successLabel || "Runtime ready";
+  const errorPrefix = options.errorPrefix || "Execution error";
+
+  updateKernelState(runningLabel);
+  cell.status = "Running";
+  cell.outputs = [createStreamOutput("Executing...")];
+  renderNotebook();
+
+  try {
+    const outputs = await runtimeAdapter.execute(cell.source);
+    cell.outputs = outputs;
+    cell.executionCount = (cell.executionCount || 0) + 1;
+    cell.status = "Complete";
+    updateKernelState(successLabel);
+  } catch (error) {
+    cell.outputs = [createStreamOutput(String(error.message || error), "stderr")];
+    cell.status = "Error";
+    updateKernelState(`${errorPrefix}: ${String(error.message || error)}`);
+  }
+
+  notebook.updatedAt = new Date().toISOString();
+  renderNotebook();
+  await refreshVariableViewer();
+  await refreshWatchViewer();
+  scheduleAutosave();
+}
+
 async function runCell(cellId) {
   const notebook = activeNotebook();
   const cell = notebook && notebook.cells.find((entry) => entry.id === cellId);
@@ -2355,29 +2466,8 @@ async function runCell(cellId) {
   }
 
   beginExecution(cell.id, { runAll: false });
-  updateKernelState(`Running cell ${cell.id}`);
-  cell.status = "Running";
-  cell.outputs = [createStreamOutput("Executing...")];
-  renderNotebook();
-
-  try {
-    const outputs = await runtimeAdapter.execute(cell.source);
-    cell.outputs = outputs;
-    cell.executionCount = (cell.executionCount || 0) + 1;
-    cell.status = "Complete";
-    updateKernelState("Runtime ready");
-  } catch (error) {
-    cell.outputs = [createStreamOutput(String(error.message || error))];
-    cell.status = "Error";
-    updateKernelState(`Execution error: ${String(error.message || error)}`);
-  }
-
-  notebook.updatedAt = new Date().toISOString();
-  renderNotebook();
-  await refreshVariableViewer();
-  await refreshWatchViewer();
+  await executeCodeCell(cell, notebook);
   endExecution();
-  scheduleAutosave();
 }
 
 async function runCellAndAdvance(cellId) {
@@ -2406,26 +2496,9 @@ async function runAllCells() {
     }
 
     beginExecution(cell.id, { runAll: true });
-    updateKernelState(`Running all cells (active cell ${cell.id})`);
-    cell.status = "Running";
-    cell.outputs = [createStreamOutput("Executing...")];
-    renderNotebook();
-
-    try {
-      const outputs = await runtimeAdapter.execute(cell.source);
-      cell.outputs = outputs;
-      cell.executionCount = (cell.executionCount || 0) + 1;
-      cell.status = "Complete";
-    } catch (error) {
-      cell.outputs = [createStreamOutput(String(error.message || error))];
-      cell.status = "Error";
-      updateKernelState(`Execution error: ${String(error.message || error)}`);
-    }
-
-    notebook.updatedAt = new Date().toISOString();
-    renderNotebook();
-    await refreshVariableViewer();
-    await refreshWatchViewer();
+    await executeCodeCell(cell, notebook, {
+      runningLabel: `Running all cells (active cell ${cell.id})`,
+    });
 
     if (notebookState.execution.interruptRequested) {
       endExecution();
@@ -2440,6 +2513,111 @@ async function runAllCells() {
   updateKernelState("Runtime ready");
   renderNotebook();
   scheduleAutosave();
+}
+
+function toggleBreakpoint(cellId) {
+  const notebook = activeNotebook();
+  const cell = notebook && notebook.cells.find((entry) => entry.id === cellId);
+  if (!cell || cell.cellType !== "code" || notebookState.execution.busy) {
+    return;
+  }
+
+  cell.breakpoint = !cell.breakpoint;
+  notebook.updatedAt = new Date().toISOString();
+  renderNotebook();
+  scheduleAutosave();
+}
+
+async function startDebugSession() {
+  const notebook = activeNotebook();
+  if (!notebook || notebookState.execution.busy || notebookState.debug.active) {
+    return;
+  }
+
+  const firstCodeCell = notebook.cells.find((cell) => cell.cellType === "code");
+  if (!firstCodeCell) {
+    return;
+  }
+
+  pauseDebugAtCell(firstCodeCell.id, `Debugger paused before cell ${firstCodeCell.id}.`);
+}
+
+async function continueDebugSession() {
+  const notebook = activeNotebook();
+  if (!notebook || notebookState.execution.busy || !notebookState.debug.pausedCellId) {
+    return;
+  }
+
+  let currentIndex = notebook.cells.findIndex((cell) => cell.id === notebookState.debug.pausedCellId);
+  if (currentIndex < 0) {
+    stopDebugSession("Debug session stopped");
+    return;
+  }
+
+  clearPausedDebugState();
+  notebookState.debug.pausedCellId = null;
+
+  const currentCell = notebook.cells[currentIndex];
+  beginExecution(currentCell.id, { runAll: true });
+  await executeCodeCell(currentCell, notebook, {
+    runningLabel: `Debug continue (cell ${currentCell.id})`,
+    successLabel: "Debug continue ready",
+    errorPrefix: "Debug error",
+  });
+  endExecution();
+
+  for (let nextIndex = currentIndex + 1; nextIndex < notebook.cells.length; nextIndex += 1) {
+    const nextCell = notebook.cells[nextIndex];
+    if (nextCell.cellType !== "code") {
+      continue;
+    }
+    if (nextCell.breakpoint) {
+      pauseDebugAtCell(nextCell.id, `Debugger paused at breakpoint in cell ${nextCell.id}.`);
+      return;
+    }
+
+    beginExecution(nextCell.id, { runAll: true });
+    await executeCodeCell(nextCell, notebook, {
+      runningLabel: `Debug continue (cell ${nextCell.id})`,
+      successLabel: "Debug continue ready",
+      errorPrefix: "Debug error",
+    });
+    endExecution();
+  }
+
+  stopDebugSession("Debug session complete");
+}
+
+async function stepDebugSession() {
+  const notebook = activeNotebook();
+  if (!notebook || notebookState.execution.busy || !notebookState.debug.pausedCellId) {
+    return;
+  }
+
+  const currentIndex = notebook.cells.findIndex((cell) => cell.id === notebookState.debug.pausedCellId);
+  if (currentIndex < 0) {
+    stopDebugSession("Debug session stopped");
+    return;
+  }
+
+  const cell = notebook.cells[currentIndex];
+  clearPausedDebugState();
+  notebookState.debug.pausedCellId = null;
+  beginExecution(cell.id, { runAll: false });
+  await executeCodeCell(cell, notebook, {
+    runningLabel: `Debug step (cell ${cell.id})`,
+    successLabel: "Debug step ready",
+    errorPrefix: "Debug error",
+  });
+  endExecution();
+
+  const nextCodeCell = notebook.cells.slice(currentIndex + 1).find((entry) => entry.cellType === "code");
+  if (!nextCodeCell) {
+    stopDebugSession("Debug session complete");
+    return;
+  }
+
+  pauseDebugAtCell(nextCodeCell.id, `Debugger stepped to cell ${nextCodeCell.id}.`);
 }
 
 function wireEvents() {
@@ -2470,6 +2648,24 @@ function wireEvents() {
   document
     .getElementById("clear-all-outputs")
     .addEventListener("click", clearAllOutputs);
+  document
+    .getElementById("start-debug")
+    .addEventListener("click", () => {
+      void startDebugSession();
+    });
+  document
+    .getElementById("continue-debug")
+    .addEventListener("click", () => {
+      void continueDebugSession();
+    });
+  document
+    .getElementById("step-debug")
+    .addEventListener("click", () => {
+      void stepDebugSession();
+    });
+  document
+    .getElementById("stop-debug")
+    .addEventListener("click", () => stopDebugSession());
   document.getElementById("run-all").addEventListener("click", runAllCells);
   document
     .getElementById("new-notebook-sidebar")
