@@ -2221,6 +2221,14 @@ function quickOpenEntries() {
       label: "Run Runtime Check",
       description: "Verify imports, plotting, and matplotlib backend health",
     },
+    ...(notebookState.selectedVariableName
+      ? [{
+          type: "command",
+          id: "watch-selected-variable",
+          label: "Watch Selected Variable",
+          description: `Add ${notebookState.selectedVariableName} to the watch panel`,
+        }]
+      : []),
     ...(selectedWorkspaceFile()
       ? [{
           type: "command",
@@ -2279,6 +2287,10 @@ function executeQuickOpenEntry(entry) {
     if (entry.id === "run-runtime-check") {
       setActiveDocument("launcher", "launcher");
       void runRuntimeDiagnostics();
+      return;
+    }
+    if (entry.id === "watch-selected-variable") {
+      addWatchExpression(notebookState.selectedVariableName);
       return;
     }
     if (entry.id === "duplicate-selected-file") {
