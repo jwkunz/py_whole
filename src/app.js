@@ -1669,6 +1669,32 @@ function packageStatusLabel(status) {
   }
 }
 
+function formatRuntimeDiagnosticsReport() {
+  const lines = [
+    "py_whole runtime report",
+    `Status: ${notebookState.diagnostics.status}`,
+  ];
+
+  if (notebookState.diagnostics.lastRunAt) {
+    lines.push(`Last Run: ${new Date(notebookState.diagnostics.lastRunAt).toLocaleString()}`);
+  }
+
+  if (!notebookState.diagnostics.results.length) {
+    lines.push("No runtime diagnostics have been run yet.");
+    return lines.join("\n");
+  }
+
+  lines.push("", "Checks:");
+  for (const result of notebookState.diagnostics.results) {
+    lines.push(`- ${result.name}: ${result.ok ? "OK" : "ERROR"}`);
+    if (result.detail) {
+      lines.push(`  ${String(result.detail).replaceAll("\n", "\n  ")}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
 function renderRuntimeDiagnostics() {
   const container = document.getElementById("runtime-diagnostics");
   if (!container) {
@@ -2268,6 +2294,12 @@ function quickOpenEntries() {
       label: "Run Runtime Check",
       description: "Verify imports, plotting, and matplotlib backend health",
     },
+    {
+      type: "command",
+      id: "copy-runtime-report",
+      label: "Copy Runtime Report",
+      description: "Copy the latest runtime diagnostics summary",
+    },
     ...(notebookState.selectedVariableName
       ? [{
           type: "command",
@@ -2334,6 +2366,10 @@ function executeQuickOpenEntry(entry) {
     if (entry.id === "run-runtime-check") {
       setActiveDocument("launcher", "launcher");
       void runRuntimeDiagnostics();
+      return;
+    }
+    if (entry.id === "copy-runtime-report") {
+      void copyTextToClipboard(formatRuntimeDiagnosticsReport());
       return;
     }
     if (entry.id === "watch-selected-variable") {
@@ -3864,12 +3900,23 @@ function wireEvents() {
       void runRuntimeDiagnostics();
     });
   document
+    .getElementById("launcher-copy-runtime-report")
+    .addEventListener("click", () => {
+      setActiveDocument("launcher", "launcher");
+      void copyTextToClipboard(formatRuntimeDiagnosticsReport());
+    });
+  document
     .getElementById("clear-all-outputs")
     .addEventListener("click", clearAllOutputs);
   document
     .getElementById("run-runtime-diagnostics")
     .addEventListener("click", () => {
       void runRuntimeDiagnostics();
+    });
+  document
+    .getElementById("copy-runtime-diagnostics")
+    .addEventListener("click", () => {
+      void copyTextToClipboard(formatRuntimeDiagnosticsReport());
     });
   document
     .getElementById("start-debug")
