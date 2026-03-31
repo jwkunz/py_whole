@@ -1875,6 +1875,18 @@ function quickOpenEntries() {
     },
     {
       type: "command",
+      id: "new-file",
+      label: "New File",
+      description: "Create a new text file in the workspace",
+    },
+    {
+      type: "command",
+      id: "new-folder",
+      label: "New Folder",
+      description: "Create a new folder in the workspace",
+    },
+    {
+      type: "command",
       id: "open-console",
       label: "Open Console",
       description: "Focus the Python console in the inspector rail",
@@ -1910,6 +1922,14 @@ function executeQuickOpenEntry(entry) {
     }
     if (entry.id === "import-files") {
       document.getElementById("workspace-file-input")?.click();
+      return;
+    }
+    if (entry.id === "new-file") {
+      createWorkspaceTextFile();
+      return;
+    }
+    if (entry.id === "new-folder") {
+      createWorkspaceFolder();
       return;
     }
     if (entry.id === "open-console") {
