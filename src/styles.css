@@ -760,6 +760,11 @@ button.danger {
   background: var(--panel-strong);
 }
 
+.cell.is-next-up {
+  border-color: rgba(255, 204, 102, 0.42);
+  box-shadow: 0 0 0 1px rgba(255, 204, 102, 0.22), var(--shadow);
+}
+
 .cell.is-running {
   border-color: rgba(255, 204, 102, 0.45);
   box-shadow: 0 24px 80px rgba(255, 204, 102, 0.08);

@@ -3003,6 +3003,7 @@ function renderNotebook() {
   const titleInput = document.getElementById("notebook-title-input");
   const cellsRoot = document.getElementById("notebook-cells");
   const template = document.getElementById("cell-template");
+  const nextRunnableCell = nextRunnableNotebookCell(notebook);
   renderWorkspaceList();
   renderWorkspaceFiles();
   renderDocumentTabs();
@@ -3054,8 +3055,20 @@ function renderNotebook() {
           notebookState.execution.currentCellId === cell.id &&
           notebookState.execution.interruptRequested,
       );
+      article.classList.toggle("is-next-up", Boolean(nextRunnableCell) && nextRunnableCell.id === cell.id);
       kindNode.textContent = cell.cellType === "markdown" ? "Markdown" : "Code";
-      statusNode.textContent = cell.breakpoint ? `${cell.status} • Breakpoint` : cell.status;
+      const statusParts = [cell.status];
+      if (cell.breakpoint) {
+        statusParts.push("Breakpoint");
+      }
+      if (notebookState.debug.active && notebookState.debug.pausedCellId === cell.id) {
+        statusParts.push("Paused Here");
+      } else if (notebookState.execution.busy && notebookState.execution.currentCellId === cell.id) {
+        statusParts.push("Running Here");
+      } else if (nextRunnableCell && nextRunnableCell.id === cell.id) {
+        statusParts.push("Next Up");
+      }
+      statusNode.textContent = statusParts.join(" • ");
       editorModeLabel.textContent = cell.cellType === "markdown" ? "Markdown" : "Python";
       editor.value = cell.source;
       markdownPreviewBlock.classList.toggle("is-hidden", cell.cellType !== "markdown");
@@ -3297,6 +3310,19 @@ function nextDebuggableCell(notebook, currentCellId) {
     return null;
   }
   return notebook.cells.slice(currentIndex + 1).find((cell) => cell.cellType === "code") || null;
+}
+
+function nextRunnableNotebookCell(notebook) {
+  if (!notebook) {
+    return null;
+  }
+  if (notebookState.debug.active && notebookState.debug.pausedCellId) {
+    return nextDebuggableCell(notebook, notebookState.debug.pausedCellId);
+  }
+  if (notebookState.execution.busy && notebookState.execution.currentCellId) {
+    return nextDebuggableCell(notebook, notebookState.execution.currentCellId);
+  }
+  return null;
 }
 
 function renderDebugViewer() {
