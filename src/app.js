@@ -25,6 +25,10 @@ const notebookState = {
   workspaceFileDraft: "",
   terminalEntries: [],
   watches: [],
+  filters: {
+    notebooks: "",
+    files: "",
+  },
   debug: {
     active: false,
     pausedCellId: null,
@@ -1333,8 +1337,22 @@ function renderPackageList() {
 
 function renderWorkspaceList() {
   const list = document.getElementById("workspace-list");
+  const filterText = notebookState.filters.notebooks.trim().toLowerCase();
+  const notebooks = notebookState.workspace.notebooks.filter((notebook) => {
+    if (!filterText) {
+      return true;
+    }
+    return `${notebook.title}.ipynb`.toLowerCase().includes(filterText);
+  });
+  if (!notebooks.length) {
+    const empty = document.createElement("div");
+    empty.className = "workspace-item";
+    empty.textContent = filterText ? "No notebooks match the current filter." : "No notebooks yet.";
+    list.replaceChildren(empty);
+    return;
+  }
   list.replaceChildren(
-    ...notebookState.workspace.notebooks.map((notebook) => {
+    ...notebooks.map((notebook) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "workspace-item";
@@ -1443,13 +1461,17 @@ function closeActiveFileTab(fileId) {
 
 function renderWorkspaceFiles() {
   const list = document.getElementById("workspace-files");
-  const files = notebookState.workspace.files || [];
+  const filterText = notebookState.filters.files.trim().toLowerCase();
+  const files = (notebookState.workspace.files || []).filter((file) => {
+    if (!filterText) {
+      return true;
+    }
+    return (file.path || file.name).toLowerCase().includes(filterText);
+  });
   if (!files.length) {
-    notebookState.selectedWorkspaceFileId = null;
-    notebookState.workspaceFileDraft = "";
     const empty = document.createElement("div");
     empty.className = "workspace-file-item";
-    empty.textContent = "No imported files yet.";
+    empty.textContent = filterText ? "No files match the current filter." : "No imported files yet.";
     list.replaceChildren(empty);
     renderWorkspaceFileEditor();
     return;
@@ -3055,6 +3077,19 @@ function wireEvents() {
       scheduleAutosave();
     });
   document
+    .getElementById("workspace-filter-input")
+    .addEventListener("input", (event) => {
+      notebookState.filters.notebooks = event.target.value;
+      renderWorkspaceList();
+    });
+  document
+    .getElementById("workspace-file-filter-input")
+    .addEventListener("input", (event) => {
+      notebookState.filters.files = event.target.value;
+      renderWorkspaceFiles();
+      renderLauncherRecent();
+    });
+  document
     .getElementById("ipynb-file-input")
     .addEventListener("change", importNotebook);
   document
@@ -3325,6 +3360,8 @@ function clearRecovery() {
 function bootstrap() {
   renderPackageList();
   loadNotebookFromStorage();
+  document.getElementById("workspace-filter-input").value = notebookState.filters.notebooks;
+  document.getElementById("workspace-file-filter-input").value = notebookState.filters.files;
   syncNotebookTitle();
   renderNotebook();
   renderVariableViewer([]);

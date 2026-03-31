@@ -285,6 +285,16 @@ button.danger {
   gap: 0.65rem;
 }
 
+.panel-filter {
+  width: 100%;
+  margin-top: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(4, 12, 20, 0.92);
+  color: var(--text);
+  padding: 0.65rem 0.8rem;
+}
+
 .tag-list {
   list-style: none;
   padding: 0;
