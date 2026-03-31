@@ -536,46 +536,110 @@ button.danger {
 }
 
 .workspace-file-item {
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 0.8rem 0.9rem;
-  background: rgba(255, 255, 255, 0.02);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.015);
 }
 
 .workspace-file-item.is-selected {
-  border-color: rgba(93, 228, 199, 0.4);
   background: rgba(93, 228, 199, 0.08);
 }
 
 .workspace-directory {
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 0.8rem 0.9rem;
-  background: rgba(255, 255, 255, 0.02);
+  display: grid;
+  gap: 0.35rem;
 }
 
 .workspace-directory-title {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 0;
+  padding: 0.35rem 0.45rem;
   border: 0;
-  border-radius: 0;
+  border-radius: 8px;
   background: transparent;
   color: var(--text);
-  font-weight: 700;
-  margin-bottom: 0.55rem;
+  font-weight: 600;
+  margin-bottom: 0;
+  box-shadow: none;
 }
 
 .workspace-directory-title:hover {
   transform: none;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .workspace-directory-children {
   display: grid;
+  gap: 0.35rem;
+}
+
+.workspace-file-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
   gap: 0.5rem;
-  margin-left: 0.75rem;
+  min-height: 2rem;
+}
+
+.workspace-file-label {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  padding: 0.35rem 0.45rem;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  border: 0;
+  box-shadow: none;
+  font-weight: 500;
+}
+
+.workspace-file-label:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.workspace-row-menu {
+  position: relative;
+}
+
+.workspace-row-menu summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.2rem 0.45rem;
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.workspace-row-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.workspace-row-menu[open] summary,
+.workspace-row-menu summary:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.workspace-row-menu-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.25rem);
+  z-index: 20;
+  display: grid;
+  gap: 0.3rem;
+  min-width: 180px;
+  padding: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+}
+
+.workspace-row-menu-list button {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  border-radius: 8px;
+  padding: 0.45rem 0.65rem;
 }
 
 .variable-list {

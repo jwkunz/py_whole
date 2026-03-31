@@ -2101,7 +2101,7 @@ function buildWorkspaceTree(files) {
   return root;
 }
 
-function renderWorkspaceTreeNodes(tree, parentPath = "") {
+function renderWorkspaceTreeNodes(tree, parentPath = "", depth = 0) {
   return Array.from(tree.entries()).map(([name, entry]) => {
     if (entry.type === "directory") {
       const directoryPath = joinWorkspacePath(parentPath, name);
@@ -2113,13 +2113,14 @@ function renderWorkspaceTreeNodes(tree, parentPath = "") {
       const title = document.createElement("button");
       title.type = "button";
       title.className = "workspace-directory-title";
-      title.textContent = `${collapsed ? "▸" : "▾"} ${name}/`;
+      title.style.paddingLeft = `${0.45 + depth * 0.9}rem`;
+      title.textContent = `${collapsed ? "▸" : "▾"}  ${name}`;
       title.addEventListener("click", () => toggleDirectoryCollapsed(directoryPath));
 
       const children = document.createElement("div");
       children.className = "workspace-directory-children";
       children.classList.toggle("is-hidden", collapsed);
-      children.replaceChildren(...renderWorkspaceTreeNodes(entry.children, directoryPath));
+      children.replaceChildren(...renderWorkspaceTreeNodes(entry.children, directoryPath, depth + 1));
 
       dir.append(title, children);
       return dir;
@@ -2129,25 +2130,27 @@ function renderWorkspaceTreeNodes(tree, parentPath = "") {
     const item = document.createElement("div");
     item.className = "workspace-file-item";
     item.classList.toggle("is-selected", file.id === notebookState.selectedWorkspaceFileId);
-    if (
-      isLikelyTextFile(file) ||
-      isPreviewableImage(file) ||
-      isPreviewableAudio(file) ||
-      isPreviewableVideo(file)
-    ) {
-      item.addEventListener("click", () => selectWorkspaceFile(file.id));
-    }
+    const row = document.createElement("div");
+    row.className = "workspace-file-row";
+    row.style.paddingLeft = `${0.45 + depth * 0.9}rem`;
 
-    const title = document.createElement("span");
-    title.className = "workspace-item-title";
+    const title = document.createElement("button");
+    title.type = "button";
+    title.className = "workspace-file-label";
     title.textContent = file.name;
+    title.addEventListener("click", () => selectWorkspaceFile(file.id));
 
     const meta = document.createElement("span");
     meta.className = "workspace-item-meta";
-    meta.textContent = `${file.path || file.name} • ${formatBytes(file.size)} • ${new Date(file.updatedAt).toLocaleString()}`;
+    meta.textContent = `${formatBytes(file.size)} • ${new Date(file.updatedAt).toLocaleDateString()}`;
 
-    const actions = document.createElement("div");
-    actions.className = "workspace-file-actions";
+    const actions = document.createElement("details");
+    actions.className = "workspace-row-menu";
+    const summary = document.createElement("summary");
+    summary.textContent = "⋯";
+    actions.append(summary);
+    const actionList = document.createElement("div");
+    actionList.className = "workspace-row-menu-list";
 
     const exportButton = document.createElement("button");
     exportButton.type = "button";
@@ -2237,10 +2240,10 @@ function renderWorkspaceTreeNodes(tree, parentPath = "") {
         event.stopPropagation();
         selectWorkspaceFile(file.id);
       });
-      actions.append(editButton);
+      actionList.append(editButton);
     }
 
-    actions.append(
+    actionList.append(
       renameButton,
       moveButton,
       duplicateButton,
@@ -2250,7 +2253,9 @@ function renderWorkspaceTreeNodes(tree, parentPath = "") {
       exportButton,
       deleteButton,
     );
-    item.append(title, meta, actions);
+    actions.append(actionList);
+    row.append(title, meta, actions);
+    item.append(row);
     return item;
   });
 }
