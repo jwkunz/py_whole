@@ -4115,6 +4115,16 @@ function wireEvents() {
       void runRuntimeDiagnostics();
     });
   document
+    .getElementById("launcher-insert-runtime-report")
+    .addEventListener("click", () => {
+      const cell = insertRuntimeReportCell();
+      if (cell) {
+        notebookState.focusedCellId = cell.id;
+        focusCellEditor(cell.id);
+        updateSaveState("Inserted runtime report");
+      }
+    });
+  document
     .getElementById("launcher-copy-runtime-report")
     .addEventListener("click", () => {
       setActiveDocument("launcher", "launcher");
