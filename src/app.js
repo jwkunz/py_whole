@@ -1386,9 +1386,23 @@ function renderDocumentTabs() {
       button.type = "button";
       button.className = "document-tab";
       button.classList.toggle("is-active", active.type === tab.type && active.id === tab.id);
-      button.textContent = tab.label;
       button.disabled = notebookState.execution.busy || notebookState.debug.active;
       button.addEventListener("click", () => setActiveDocument(tab.type, tab.id));
+
+      const label = document.createElement("span");
+      label.textContent = tab.label;
+      button.append(label);
+
+      if (tab.type === "file") {
+        const close = document.createElement("span");
+        close.className = "document-tab-close";
+        close.textContent = "×";
+        close.addEventListener("click", (event) => {
+          event.stopPropagation();
+          closeActiveFileTab(tab.id);
+        });
+        button.append(close);
+      }
       return button;
     }),
   );
@@ -1402,6 +1416,20 @@ function setActiveDocument(type, id) {
   } else if (type === "file") {
     notebookState.selectedWorkspaceFileId = id;
   }
+  renderNotebook();
+  scheduleAutosave();
+}
+
+function closeActiveFileTab(fileId) {
+  if (notebookState.selectedWorkspaceFileId !== fileId) {
+    return;
+  }
+  notebookState.selectedWorkspaceFileId = null;
+  notebookState.workspaceFileDraft = "";
+  notebookState.workspace.activeDocument = {
+    type: "notebook",
+    id: notebookState.workspace.activeNotebookId,
+  };
   renderNotebook();
   scheduleAutosave();
 }
@@ -1426,6 +1454,12 @@ function renderWorkspaceFiles() {
   ) {
     notebookState.selectedWorkspaceFileId = null;
     notebookState.workspaceFileDraft = "";
+    if (notebookState.workspace.activeDocument?.type === "file") {
+      notebookState.workspace.activeDocument = {
+        type: "notebook",
+        id: notebookState.workspace.activeNotebookId,
+      };
+    }
   }
 
   const tree = buildWorkspaceTree(files);
