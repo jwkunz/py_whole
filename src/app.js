@@ -2215,6 +2215,12 @@ function quickOpenEntries() {
       label: "New Folder",
       description: "Create a new folder in the workspace",
     },
+    {
+      type: "command",
+      id: "run-runtime-check",
+      label: "Run Runtime Check",
+      description: "Verify imports, plotting, and matplotlib backend health",
+    },
     ...(selectedWorkspaceFile()
       ? [{
           type: "command",
@@ -2268,6 +2274,11 @@ function executeQuickOpenEntry(entry) {
     }
     if (entry.id === "new-folder") {
       createWorkspaceFolder();
+      return;
+    }
+    if (entry.id === "run-runtime-check") {
+      setActiveDocument("launcher", "launcher");
+      void runRuntimeDiagnostics();
       return;
     }
     if (entry.id === "duplicate-selected-file") {
@@ -3594,6 +3605,12 @@ function wireEvents() {
     .addEventListener("click", () => {
       setActiveDocument("launcher", "launcher");
       document.getElementById("terminal-input").focus();
+    });
+  document
+    .getElementById("launcher-run-runtime-check")
+    .addEventListener("click", () => {
+      setActiveDocument("launcher", "launcher");
+      void runRuntimeDiagnostics();
     });
   document
     .getElementById("clear-all-outputs")
