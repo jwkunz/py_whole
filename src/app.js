@@ -3559,6 +3559,46 @@ async function stepDebugSession() {
   pauseDebugAtCell(nextCodeCell.id, `Debugger stepped to cell ${nextCodeCell.id}.`);
 }
 
+function handleGlobalDebugShortcut(event) {
+  const target = event.target;
+  const isEditableTarget = target instanceof HTMLTextAreaElement
+    || target instanceof HTMLInputElement
+    || target?.isContentEditable;
+
+  if (event.key === "F5" && event.shiftKey) {
+    event.preventDefault();
+    if (notebookState.debug.active) {
+      stopDebugSession();
+    }
+    return true;
+  }
+
+  if (event.key === "F10") {
+    event.preventDefault();
+    if (notebookState.debug.active && notebookState.debug.pausedCellId && !notebookState.execution.busy) {
+      void stepDebugSession();
+    }
+    return true;
+  }
+
+  if (event.key === "F5") {
+    event.preventDefault();
+    if (notebookState.execution.busy) {
+      return true;
+    }
+    if (notebookState.debug.active) {
+      void continueDebugSession();
+      return true;
+    }
+    if (!isEditableTarget) {
+      void startDebugSession();
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function wireEvents() {
   document
     .getElementById("initialize-runtime")
@@ -3725,6 +3765,9 @@ function wireEvents() {
       renderQuickOpenResults(event.target.value);
     });
   document.addEventListener("keydown", (event) => {
+    if (handleGlobalDebugShortcut(event)) {
+      return;
+    }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
       event.preventDefault();
       openQuickOpen();
