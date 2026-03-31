@@ -33,6 +33,22 @@ body {
   color: var(--text);
 }
 
+.app-error-banner {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid rgba(255, 133, 122, 0.35);
+  background: rgba(82, 17, 12, 0.96);
+  color: #ffd8d2;
+  font-family: var(--mono);
+  white-space: pre-wrap;
+}
+
+.app-error-banner.is-hidden {
+  display: none;
+}
+
 button,
 textarea {
   font: inherit;

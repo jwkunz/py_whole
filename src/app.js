@@ -59,6 +59,65 @@ const EMBEDDED_PYODIDE = globalThis.__PYWHOLE_EMBEDDED_PYODIDE__ || { available:
 const BUNDLED_PACKAGE_SET = new Set(EMBEDDED_PYODIDE.bundledPackages || []);
 const WORKSPACE_STORAGE_KEY = "py_whole.workspace.v1";
 
+function generateId(prefix) {
+  if (globalThis.crypto?.randomUUID) {
+    return `${prefix}-${globalThis.crypto.randomUUID()}`;
+  }
+
+  const randomPart = Math.random().toString(36).slice(2, 10);
+  const timePart = Date.now().toString(36);
+  return `${prefix}-${timePart}-${randomPart}`;
+}
+
+function formatErrorMessage(error) {
+  if (!error) {
+    return "Unknown error";
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  if (error instanceof Error) {
+    return error.stack || error.message || String(error);
+  }
+  if (typeof error.message === "string") {
+    return error.message;
+  }
+  try {
+    return JSON.stringify(error, null, 2);
+  } catch (_serializationError) {
+    return String(error);
+  }
+}
+
+function reportClientError(error, context = "Unexpected client error") {
+  const banner = document.getElementById("app-error-banner");
+  const message = `${context}\n${formatErrorMessage(error)}`;
+  console.error(context, error);
+  if (!banner) {
+    return;
+  }
+  banner.textContent = message;
+  banner.classList.remove("is-hidden");
+}
+
+function hideClientError() {
+  const banner = document.getElementById("app-error-banner");
+  if (!banner) {
+    return;
+  }
+  banner.textContent = "";
+  banner.classList.add("is-hidden");
+}
+
+function installGlobalErrorHandlers() {
+  window.addEventListener("error", (event) => {
+    reportClientError(event.error || event.message, "Unhandled JavaScript error");
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    reportClientError(event.reason, "Unhandled promise rejection");
+  });
+}
+
 const runtimeAdapter = {
   pyodide: null,
   runCellFn: null,
@@ -157,7 +216,11 @@ const runtimeAdapter = {
 import ast
 import base64
 import __main__
+import os
 from pywhole_bridge import push_output
+
+os.environ["MPLBACKEND"] = "Agg"
+os.environ["DISPLAY"] = ""
 
 def _pywhole_capture_display(value):
     if value is None:
@@ -241,6 +304,23 @@ def _pywhole_capture_figures():
         push_output({"kind": "image", "mime": "image/png", "data": encoded})
     plt.close("all")
 
+def _pywhole_patch_matplotlib():
+    try:
+        import matplotlib
+        matplotlib.use("Agg", force=True)
+        matplotlib.rcParams["backend"] = "Agg"
+        import matplotlib.pyplot as plt
+        plt.switch_backend("Agg")
+
+        def _pywhole_show(*args, **kwargs):
+            _pywhole_capture_figures()
+            return None
+
+        plt.show = _pywhole_show
+        plt.pause = lambda *args, **kwargs: None
+    except Exception:
+        pass
+
 def _pywhole_run_cell(source):
     namespace = __main__.__dict__
     tree = ast.parse(source, mode="exec")
@@ -256,6 +336,8 @@ def _pywhole_run_cell(source):
         exec(compile(tree, "<py_whole>", "exec"), namespace, namespace)
 
     _pywhole_capture_figures()
+
+_pywhole_patch_matplotlib()
 
 def _pywhole_list_variables():
     namespace = __main__.__dict__
@@ -493,11 +575,10 @@ function installPyodideAssetFetch() {
 
   const originalFetch = globalThis.fetch.bind(globalThis);
   const assetCache = new Map();
-  const base = EMBEDDED_PYODIDE.indexURL;
 
   globalThis.fetch = async (input, init) => {
-    const url = typeof input === "string" ? input : input.url;
-    if (typeof url === "string" && url.startsWith(base)) {
+    const url = normalizeFetchUrl(input);
+    if (isEmbeddedPyodideAssetUrl(url)) {
       return serveEmbeddedPyodideAsset(url, assetCache);
     }
     return originalFetch(input, init);
@@ -506,9 +587,41 @@ function installPyodideAssetFetch() {
   globalThis.__pyWholePyodideFetchInstalled = true;
 }
 
+function normalizeFetchUrl(input) {
+  if (typeof input === "string") {
+    return input;
+  }
+  if (input instanceof URL) {
+    return input.href;
+  }
+  if (input && typeof input.url === "string") {
+    return input.url;
+  }
+  return String(input || "");
+}
+
+function isEmbeddedPyodideAssetUrl(url) {
+  if (typeof url !== "string" || !url) {
+    return false;
+  }
+
+  if (url.startsWith(EMBEDDED_PYODIDE.indexURL)) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(url, window.location.href);
+    const embeddedBase = new URL(EMBEDDED_PYODIDE.indexURL);
+    return parsed.origin === embeddedBase.origin && parsed.pathname.startsWith(embeddedBase.pathname);
+  } catch (_error) {
+    return false;
+  }
+}
+
 function serveEmbeddedPyodideAsset(url, assetCache) {
+  const normalizedUrl = normalizeEmbeddedAssetUrl(url);
   const headers = new Headers();
-  if (url.endsWith("pyodide.asm.wasm")) {
+  if (normalizedUrl.endsWith("pyodide.asm.wasm")) {
     headers.set("Content-Type", "application/wasm");
     return Promise.resolve(
       new Response(decodeBase64Asset("wasm", EMBEDDED_PYODIDE.assets.wasmBase64, assetCache), {
@@ -516,7 +629,7 @@ function serveEmbeddedPyodideAsset(url, assetCache) {
       }),
     );
   }
-  if (url.endsWith("python_stdlib.zip")) {
+  if (normalizedUrl.endsWith("python_stdlib.zip")) {
     headers.set("Content-Type", "application/zip");
     return Promise.resolve(
       new Response(
@@ -525,11 +638,11 @@ function serveEmbeddedPyodideAsset(url, assetCache) {
       ),
     );
   }
-  if (url.endsWith("pyodide-lock.json")) {
+  if (normalizedUrl.endsWith("pyodide-lock.json")) {
     headers.set("Content-Type", "application/json");
     return Promise.resolve(new Response(EMBEDDED_PYODIDE.assets.lockFileText, { headers }));
   }
-  const packageFileName = url.slice(EMBEDDED_PYODIDE.indexURL.length);
+  const packageFileName = normalizedUrl.slice(EMBEDDED_PYODIDE.indexURL.length);
   if (EMBEDDED_PYODIDE.assets.packages && EMBEDDED_PYODIDE.assets.packages[packageFileName]) {
     headers.set(
       "Content-Type",
@@ -547,6 +660,14 @@ function serveEmbeddedPyodideAsset(url, assetCache) {
     );
   }
   return Promise.resolve(new Response("Not found", { status: 404 }));
+}
+
+function normalizeEmbeddedAssetUrl(url) {
+  try {
+    return new URL(url, EMBEDDED_PYODIDE.indexURL).href;
+  } catch (_error) {
+    return url;
+  }
 }
 
 function decodeBase64Asset(cacheKey, base64, assetCache) {
@@ -604,6 +725,30 @@ function joinWorkspacePath(...parts) {
 function basename(path) {
   const parts = normalizeWorkspacePath(path).split("/");
   return parts[parts.length - 1] || "";
+}
+
+function dirname(path) {
+  const parts = normalizeWorkspacePath(path).split("/");
+  parts.pop();
+  return parts.join("/");
+}
+
+function suggestDuplicateWorkspacePath(path, existingPaths) {
+  const normalizedPath = normalizeWorkspacePath(path);
+  const directory = dirname(normalizedPath);
+  const fileName = basename(normalizedPath);
+  const extensionIndex = fileName.lastIndexOf(".");
+  const hasExtension = extensionIndex > 0;
+  const stem = hasExtension ? fileName.slice(0, extensionIndex) : fileName;
+  const extension = hasExtension ? fileName.slice(extensionIndex) : "";
+
+  let candidate = joinWorkspacePath(directory, `${stem} copy${extension}`);
+  let counter = 2;
+  while (existingPaths.has(candidate)) {
+    candidate = joinWorkspacePath(directory, `${stem} copy ${counter}${extension}`);
+    counter += 1;
+  }
+  return candidate;
 }
 
 function isLikelyTextFile(file) {
@@ -896,7 +1041,7 @@ function insertTextIntoActiveEditor(text) {
 
 function createNotebookRecord(title = "Untitled") {
   return {
-    id: `nb-${crypto.randomUUID()}`,
+    id: generateId("nb"),
     title,
     cells: [],
     updatedAt: new Date().toISOString(),
@@ -906,7 +1051,7 @@ function createNotebookRecord(title = "Untitled") {
 function createWorkspaceFile(name, bytes, type = "application/octet-stream") {
   const normalizedPath = normalizeWorkspacePath(name);
   return {
-    id: `file-${crypto.randomUUID()}`,
+    id: generateId("file"),
     name: basename(normalizedPath),
     path: normalizedPath,
     type,
@@ -1644,6 +1789,15 @@ function renderWorkspaceTreeNodes(tree, parentPath = "") {
       moveWorkspaceFile(file.id);
     });
 
+    const duplicateButton = document.createElement("button");
+    duplicateButton.type = "button";
+    duplicateButton.className = "secondary";
+    duplicateButton.textContent = "Duplicate";
+    duplicateButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      duplicateWorkspaceFile(file.id);
+    });
+
     const copyPathButton = document.createElement("button");
     copyPathButton.type = "button";
     copyPathButton.className = "secondary";
@@ -1693,6 +1847,7 @@ function renderWorkspaceTreeNodes(tree, parentPath = "") {
     actions.append(
       renameButton,
       moveButton,
+      duplicateButton,
       copyPathButton,
       insertPathButton,
       loadSnippetButton,
@@ -1885,6 +2040,14 @@ function quickOpenEntries() {
       label: "New Folder",
       description: "Create a new folder in the workspace",
     },
+    ...(selectedWorkspaceFile()
+      ? [{
+          type: "command",
+          id: "duplicate-selected-file",
+          label: "Duplicate Selected File",
+          description: `Create a copy of ${selectedWorkspaceFile().path || selectedWorkspaceFile().name}`,
+        }]
+      : []),
     {
       type: "command",
       id: "open-console",
@@ -1930,6 +2093,10 @@ function executeQuickOpenEntry(entry) {
     }
     if (entry.id === "new-folder") {
       createWorkspaceFolder();
+      return;
+    }
+    if (entry.id === "duplicate-selected-file") {
+      duplicateWorkspaceFile(selectedWorkspaceFile()?.id);
       return;
     }
     if (entry.id === "open-console") {
@@ -3477,12 +3644,12 @@ function duplicateActiveNotebook() {
   }
 
   const duplicate = hydrateNotebookRecord({
-    id: `nb-${crypto.randomUUID()}`,
+    id: generateId("nb"),
     title: `${notebook.title} Copy`,
     updatedAt: new Date().toISOString(),
     notebook: buildIpynbDocumentForNotebook(notebook),
   });
-  duplicate.id = `nb-${crypto.randomUUID()}`;
+  duplicate.id = generateId("nb");
   duplicate.title = `${notebook.title} Copy`;
   duplicate.updatedAt = new Date().toISOString();
 
@@ -3522,6 +3689,42 @@ function createWorkspaceTextFile() {
     }
   }
   selectWorkspaceFile(record.id);
+  renderNotebook();
+  scheduleAutosave();
+}
+
+function duplicateWorkspaceFile(fileId) {
+  if (notebookState.execution.busy || notebookState.debug.active) {
+    return;
+  }
+  const file = notebookState.workspace.files.find((entry) => entry.id === fileId);
+  if (!file) {
+    return;
+  }
+
+  const existingPaths = new Set(
+    notebookState.workspace.files.map((entry) => normalizeWorkspacePath(entry.path || entry.name)),
+  );
+  const duplicatePath = suggestDuplicateWorkspacePath(file.path || file.name, existingPaths);
+  const duplicate = createWorkspaceFile(
+    duplicatePath,
+    decodeBase64ToUint8Array(file.base64),
+    file.type || "application/octet-stream",
+  );
+  duplicate.updatedAt = new Date().toISOString();
+
+  notebookState.workspace.files.push(duplicate);
+  if (runtimeAdapter.pyodide) {
+    const absolutePath = `/workspace/${duplicate.path || duplicate.name}`;
+    ensureParentDirectories(runtimeAdapter.pyodide.FS, absolutePath);
+    try {
+      runtimeAdapter.pyodide.FS.writeFile(absolutePath, decodeBase64ToUint8Array(duplicate.base64));
+    } catch (_error) {
+    }
+  }
+
+  selectWorkspaceFile(duplicate.id);
+  updateSaveState(`Duplicated ${file.path || file.name}`);
   renderNotebook();
   scheduleAutosave();
 }
@@ -3784,6 +3987,7 @@ function clearRecovery() {
 }
 
 function bootstrap() {
+  hideClientError();
   renderPackageList();
   loadNotebookFromStorage();
   document.getElementById("workspace-filter-input").value = notebookState.filters.notebooks;
@@ -3804,4 +4008,9 @@ function bootstrap() {
   syncExecutionUi();
 }
 
-bootstrap();
+installGlobalErrorHandlers();
+try {
+  bootstrap();
+} catch (error) {
+  reportClientError(error, "Application bootstrap failed");
+}
