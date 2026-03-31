@@ -3399,6 +3399,9 @@ function renderDebugViewer() {
     "F10 Step",
     "Shift+F5 Stop",
   ].join("\n");
+  const actionHelp = notebookState.debug.active && pausedCell
+    ? "Use a cell's 'Run To Here' button to continue directly to that code cell."
+    : "Start a debug session to unlock targeted 'Run To Here' controls.";
 
   const cards = [];
   for (const [title, body] of [
@@ -3427,6 +3430,10 @@ function renderDebugViewer() {
     [
       "Shortcuts",
       shortcutHelp,
+    ],
+    [
+      "Actions",
+      actionHelp,
     ],
     [
       "History",
