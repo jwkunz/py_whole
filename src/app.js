@@ -764,6 +764,44 @@ function focusCellEditor(cellId) {
   }
 }
 
+function quotedWorkspacePath(file) {
+  return JSON.stringify(`/workspace/${file.path || file.name}`);
+}
+
+async function copyTextToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    updateSaveState("Copied path to clipboard");
+  } catch (_error) {
+    updateSaveState("Clipboard copy failed");
+  }
+}
+
+function insertTextIntoActiveEditor(text) {
+  const notebook = activeNotebook();
+  const activeCell = notebook?.cells.find((cell) => cell.id === notebookState.focusedCellId);
+  if (activeCell && activeCell.cellType === "code") {
+    activeCell.source = activeCell.source
+      ? `${activeCell.source}${activeCell.source.endsWith("\n") ? "" : "\n"}${text}`
+      : text;
+    renderNotebook();
+    focusCellEditor(activeCell.id);
+    scheduleAutosave();
+    return true;
+  }
+
+  const terminalInput = document.getElementById("terminal-input");
+  if (terminalInput && !terminalInput.disabled) {
+    terminalInput.value = terminalInput.value
+      ? `${terminalInput.value}${terminalInput.value.endsWith("\n") ? "" : "\n"}${text}`
+      : text;
+    terminalInput.focus();
+    return true;
+  }
+
+  return false;
+}
+
 function createNotebookRecord(title = "Untitled") {
   return {
     id: `nb-${crypto.randomUUID()}`,
@@ -1281,6 +1319,25 @@ function renderWorkspaceTreeNodes(tree) {
       deleteWorkspaceFile(file.id);
     });
 
+    const copyPathButton = document.createElement("button");
+    copyPathButton.type = "button";
+    copyPathButton.className = "secondary";
+    copyPathButton.textContent = "Copy Path";
+    copyPathButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void copyTextToClipboard(quotedWorkspacePath(file));
+    });
+
+    const insertPathButton = document.createElement("button");
+    insertPathButton.type = "button";
+    insertPathButton.className = "secondary";
+    insertPathButton.textContent = "Insert Path";
+    insertPathButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const inserted = insertTextIntoActiveEditor(quotedWorkspacePath(file));
+      updateSaveState(inserted ? "Inserted workspace path" : "No active editor for path insertion");
+    });
+
     if (
       isLikelyTextFile(file) ||
       isPreviewableImage(file) ||
@@ -1298,7 +1355,7 @@ function renderWorkspaceTreeNodes(tree) {
       actions.append(editButton);
     }
 
-    actions.append(exportButton, deleteButton);
+    actions.append(copyPathButton, insertPathButton, exportButton, deleteButton);
     item.append(title, meta, actions);
     return item;
   });
