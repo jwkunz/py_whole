@@ -711,6 +711,7 @@ function syncExecutionUi() {
     document.getElementById("delete-notebook"),
     document.getElementById("import-notebook"),
     document.getElementById("export-notebook"),
+    document.getElementById("clear-all-outputs"),
     document.getElementById("import-file"),
     document.getElementById("new-folder"),
     document.getElementById("clear-recovery"),
@@ -2109,6 +2110,7 @@ function renderNotebook() {
       const outputList = fragment.querySelector(".cell-output-list");
       const toggleKindButton = fragment.querySelector(".toggle-kind");
       const runButton = fragment.querySelector(".run-cell");
+      const clearOutputButton = fragment.querySelector(".clear-output");
       const deleteButton = fragment.querySelector(".delete-cell");
       const moveUpButton = fragment.querySelector(".move-up");
       const moveDownButton = fragment.querySelector(".move-down");
@@ -2136,10 +2138,12 @@ function renderNotebook() {
       renderCellOutputs(outputList, cell.outputs);
       toggleKindButton.addEventListener("click", () => toggleCellType(cell.id));
       runButton.addEventListener("click", () => runCell(cell.id));
+      clearOutputButton.addEventListener("click", () => clearCellOutput(cell.id));
       deleteButton.addEventListener("click", () => deleteCell(cell.id));
       moveUpButton.disabled = index === 0;
       moveDownButton.disabled = index === notebook.cells.length - 1;
       runButton.disabled = cell.cellType !== "code" || !canRunCell(cell.id);
+      clearOutputButton.disabled = cell.cellType !== "code" || notebookState.execution.busy;
       toggleKindButton.disabled = notebookState.execution.busy;
       deleteButton.disabled = notebookState.execution.busy;
       moveUpButton.disabled = moveUpButton.disabled || notebookState.execution.busy;
@@ -2203,6 +2207,37 @@ function deleteCell(cellId) {
   }
 
   notebook.cells = notebook.cells.filter((cell) => cell.id !== cellId);
+  notebook.updatedAt = new Date().toISOString();
+  renderNotebook();
+  scheduleAutosave();
+}
+
+function clearCellOutput(cellId) {
+  const notebook = activeNotebook();
+  const cell = notebook && notebook.cells.find((entry) => entry.id === cellId);
+  if (!cell || cell.cellType !== "code" || notebookState.execution.busy) {
+    return;
+  }
+
+  cell.outputs = [];
+  cell.status = "Idle";
+  notebook.updatedAt = new Date().toISOString();
+  renderNotebook();
+  scheduleAutosave();
+}
+
+function clearAllOutputs() {
+  const notebook = activeNotebook();
+  if (!notebook || notebookState.execution.busy) {
+    return;
+  }
+
+  for (const cell of notebook.cells) {
+    if (cell.cellType === "code") {
+      cell.outputs = [];
+      cell.status = "Idle";
+    }
+  }
   notebook.updatedAt = new Date().toISOString();
   renderNotebook();
   scheduleAutosave();
@@ -2372,6 +2407,9 @@ function wireEvents() {
   document
     .getElementById("add-markdown-cell")
     .addEventListener("click", addMarkdownCell);
+  document
+    .getElementById("clear-all-outputs")
+    .addEventListener("click", clearAllOutputs);
   document.getElementById("run-all").addEventListener("click", runAllCells);
   document
     .getElementById("new-notebook-sidebar")
