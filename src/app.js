@@ -47,6 +47,10 @@ const notebookState = {
   filters: {
     files: "",
   },
+  layout: {
+    sidebarWidth: 232,
+    inspectorWidth: 264,
+  },
   collapsedDirectories: [],
   panelVisibility: {},
   diagnostics: {
@@ -81,6 +85,14 @@ let saveTimer = null;
 const EMBEDDED_PYODIDE = globalThis.__PYWHOLE_EMBEDDED_PYODIDE__ || { available: false };
 const BUNDLED_PACKAGE_SET = new Set(EMBEDDED_PYODIDE.bundledPackages || []);
 const WORKSPACE_STORAGE_KEY = "py_whole.workspace.v1";
+const DEFAULT_LAYOUT = {
+  sidebarWidth: 232,
+  inspectorWidth: 264,
+};
+const MIN_SIDEBAR_WIDTH = 210;
+const MIN_INSPECTOR_WIDTH = 228;
+const MIN_CENTER_WIDTH = 520;
+const LAYOUT_RESIZER_SIZE = 10;
 
 function generateId(prefix) {
   if (globalThis.crypto?.randomUUID) {
@@ -110,6 +122,95 @@ function formatErrorMessage(error) {
   } catch (_serializationError) {
     return String(error);
   }
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizedLayout(layout = {}) {
+  return {
+    sidebarWidth: Number.isFinite(Number(layout.sidebarWidth))
+      ? Number(layout.sidebarWidth)
+      : DEFAULT_LAYOUT.sidebarWidth,
+    inspectorWidth: Number.isFinite(Number(layout.inspectorWidth))
+      ? Number(layout.inspectorWidth)
+      : DEFAULT_LAYOUT.inspectorWidth,
+  };
+}
+
+function maxSidebarWidth() {
+  return Math.max(
+    MIN_SIDEBAR_WIDTH,
+    window.innerWidth - notebookState.layout.inspectorWidth - MIN_CENTER_WIDTH - (LAYOUT_RESIZER_SIZE * 2),
+  );
+}
+
+function maxInspectorWidth() {
+  return Math.max(
+    MIN_INSPECTOR_WIDTH,
+    window.innerWidth - notebookState.layout.sidebarWidth - MIN_CENTER_WIDTH - (LAYOUT_RESIZER_SIZE * 2),
+  );
+}
+
+function applyLayoutSizing() {
+  notebookState.layout = normalizedLayout(notebookState.layout);
+  notebookState.layout.sidebarWidth = clamp(
+    notebookState.layout.sidebarWidth,
+    MIN_SIDEBAR_WIDTH,
+    maxSidebarWidth(),
+  );
+  notebookState.layout.inspectorWidth = clamp(
+    notebookState.layout.inspectorWidth,
+    MIN_INSPECTOR_WIDTH,
+    maxInspectorWidth(),
+  );
+
+  const appShell = document.querySelector(".app-shell");
+  const workspaceShell = document.querySelector(".workspace-shell");
+  if (appShell) {
+    appShell.style.setProperty("--sidebar-width", `${notebookState.layout.sidebarWidth}px`);
+  }
+  if (workspaceShell) {
+    workspaceShell.style.setProperty("--inspector-width", `${notebookState.layout.inspectorWidth}px`);
+  }
+}
+
+function closeOpenMenus() {
+  document.querySelectorAll(".menu-group[open]").forEach((menu) => {
+    menu.removeAttribute("open");
+  });
+}
+
+function wireLayoutResizer(resizerId, onDrag) {
+  const resizer = document.getElementById(resizerId);
+  if (!resizer) {
+    return;
+  }
+
+  resizer.addEventListener("pointerdown", (event) => {
+    if (window.innerWidth <= 760) {
+      return;
+    }
+    event.preventDefault();
+    closeOpenMenus();
+    document.querySelector(".app-shell")?.classList.add("is-resizing");
+
+    const handlePointerMove = (moveEvent) => {
+      onDrag(moveEvent);
+      applyLayoutSizing();
+    };
+
+    const handlePointerUp = () => {
+      document.querySelector(".app-shell")?.classList.remove("is-resizing");
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      scheduleAutosave();
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  });
 }
 
 function reportClientError(error, context = "Unexpected client error") {
@@ -1672,6 +1773,7 @@ function saveNotebookToStorage() {
     collapsedDirectories: notebookState.collapsedDirectories,
     files: notebookState.workspace.files,
     filters: notebookState.filters,
+    layout: notebookState.layout,
     notebooks: notebookState.workspace.notebooks.map((notebook) => ({
       id: notebook.id,
       title: notebook.title,
@@ -1747,6 +1849,7 @@ function applyWorkspaceState(state) {
   notebookState.filters = {
     files: String(state.filters?.files || ""),
   };
+  notebookState.layout = normalizedLayout(state.layout);
   notebookState.panelVisibility =
     state.panelVisibility && typeof state.panelVisibility === "object"
       ? state.panelVisibility
@@ -4788,6 +4891,25 @@ function wireEvents() {
       button.closest(".menu-group")?.removeAttribute("open");
     });
   });
+  wireLayoutResizer("left-column-resizer", (event) => {
+    const appShell = document.querySelector(".app-shell");
+    if (!appShell) {
+      return;
+    }
+    const bounds = appShell.getBoundingClientRect();
+    const nextWidth = event.clientX - bounds.left;
+    notebookState.layout.sidebarWidth = clamp(nextWidth, MIN_SIDEBAR_WIDTH, maxSidebarWidth());
+  });
+  wireLayoutResizer("right-column-resizer", (event) => {
+    const workspaceShell = document.querySelector(".workspace-shell");
+    if (!workspaceShell) {
+      return;
+    }
+    const bounds = workspaceShell.getBoundingClientRect();
+    const nextWidth = bounds.right - event.clientX;
+    notebookState.layout.inspectorWidth = clamp(nextWidth, MIN_INSPECTOR_WIDTH, maxInspectorWidth());
+  });
+  window.addEventListener("resize", applyLayoutSizing);
   document.addEventListener("click", (event) => {
     const menuAction = event.target.closest(".menu-group .menu-action");
     if (menuAction) {
@@ -4797,9 +4919,7 @@ function wireEvents() {
     if (event.target.closest(".menu-group")) {
       return;
     }
-    document.querySelectorAll(".menu-group[open]").forEach((menu) => {
-      menu.removeAttribute("open");
-    });
+    closeOpenMenus();
   });
 }
 
@@ -5255,6 +5375,7 @@ function bootstrap() {
   if (workspaceFileFilterInput) {
     workspaceFileFilterInput.value = notebookState.filters.files;
   }
+  applyLayoutSizing();
   syncNotebookTitle();
   renderNotebook();
   renderVariableViewer([]);

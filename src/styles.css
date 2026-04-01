@@ -1,5 +1,8 @@
 :root {
   color-scheme: dark;
+  --sidebar-width: 232px;
+  --inspector-width: 264px;
+  --layout-resizer-size: 10px;
   --bg: #0b121b;
   --panel: rgba(15, 23, 33, 0.94);
   --panel-strong: rgba(18, 27, 39, 0.98);
@@ -95,7 +98,7 @@ button.danger {
 
 .app-shell {
   display: grid;
-  grid-template-columns: minmax(210px, 232px) minmax(0, 1fr);
+  grid-template-columns: minmax(210px, var(--sidebar-width)) var(--layout-resizer-size) minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -108,8 +111,38 @@ button.danger {
 
 .workspace-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(228px, 264px);
+  grid-template-columns: minmax(0, 1fr) var(--layout-resizer-size) minmax(228px, var(--inspector-width));
   min-height: 100vh;
+}
+
+.layout-resizer {
+  position: relative;
+  min-width: var(--layout-resizer-size);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.layout-resizer::before {
+  content: "";
+  position: absolute;
+  inset: 0.35rem 0.2rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(124, 195, 255, 0.1), rgba(124, 195, 255, 0.28));
+  opacity: 0.35;
+  transition: opacity 140ms ease, background 140ms ease;
+}
+
+.layout-resizer:hover::before,
+.layout-resizer:focus-visible::before,
+.app-shell.is-resizing .layout-resizer::before {
+  opacity: 0.85;
+  background: linear-gradient(180deg, rgba(124, 195, 255, 0.22), rgba(124, 195, 255, 0.5));
+}
+
+.layout-resizer:focus-visible {
+  outline: 2px solid rgba(124, 195, 255, 0.5);
+  outline-offset: -2px;
 }
 
 .workspace {
@@ -332,6 +365,12 @@ button.danger {
 
 .app-shell.is-busy {
   cursor: progress;
+}
+
+.app-shell.is-resizing,
+.app-shell.is-resizing * {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .brand-block {
@@ -1537,6 +1576,10 @@ button.danger {
 
   .workspace-shell {
     grid-template-columns: 1fr;
+  }
+
+  .layout-resizer {
+    display: none;
   }
 
   .workspace-utility-panels {
