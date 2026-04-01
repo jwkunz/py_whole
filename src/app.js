@@ -132,6 +132,49 @@ function editorModeForCell(cell) {
   return "python";
 }
 
+function bundledPackageNameForImport(moduleName) {
+  const rootModule = String(moduleName || "").trim().split(".")[0];
+  switch (rootModule) {
+    case "cv2":
+      return "opencv";
+    case "skimage":
+      return "scikit-image";
+    default:
+      return rootModule;
+  }
+}
+
+function detectBundledPackagesForSource(source) {
+  const text = String(source || "");
+  if (!text.trim()) {
+    return [];
+  }
+
+  const packageNames = new Set();
+  const importPattern = /^\s*import\s+(.+)$/gm;
+  const fromPattern = /^\s*from\s+([A-Za-z0-9_\.]+)\s+import\b/gm;
+
+  for (const match of text.matchAll(importPattern)) {
+    const clause = match[1].split("#")[0];
+    clause.split(",").forEach((segment) => {
+      const moduleName = segment.trim().split(/\s+as\s+/i)[0];
+      const packageName = bundledPackageNameForImport(moduleName);
+      if (BUNDLED_PACKAGE_SET.has(packageName)) {
+        packageNames.add(packageName);
+      }
+    });
+  }
+
+  for (const match of text.matchAll(fromPattern)) {
+    const packageName = bundledPackageNameForImport(match[1]);
+    if (BUNDLED_PACKAGE_SET.has(packageName)) {
+      packageNames.add(packageName);
+    }
+  }
+
+  return Array.from(packageNames);
+}
+
 function syntaxHighlightInstance(textarea) {
   return textarea?._pywholeSyntaxHighlight || null;
 }
@@ -478,6 +521,7 @@ const runtimeAdapter = {
   pyodide: null,
   runCellFn: null,
   initializePromise: null,
+  loadedPackages: new Set(),
 
   async initialize() {
     if (this.initializePromise) {
@@ -504,16 +548,12 @@ const runtimeAdapter = {
         stdout: () => {},
         stderr: () => {},
       });
-      if (EMBEDDED_PYODIDE.bundledPackages?.length) {
-        updateKernelState("Loading bundled scientific packages");
-        await this.pyodide.loadPackage(EMBEDDED_PYODIDE.bundledPackages);
-      }
       await this.installNotebookHelpers();
       await this.syncWorkspaceFiles();
       notebookState.runtimeReady = true;
       await refreshVariableViewer();
       updateKernelState(
-        `Runtime ready (Pyodide ${EMBEDDED_PYODIDE.version}, ${EMBEDDED_PYODIDE.bundledPackages?.length || 0} bundled packages)`,
+        `Runtime ready (Pyodide ${EMBEDDED_PYODIDE.version}, bundled packages load on demand)`,
       );
       syncExecutionUi();
       renderTerminalOutput();
@@ -535,6 +575,15 @@ const runtimeAdapter = {
     if (!this.pyodide || !notebookState.runtimeReady) {
       throw new Error("Runtime is not initialized.");
     }
+    await this.ensurePackagesLoaded([
+      "numpy",
+      "scipy",
+      "matplotlib",
+      "sympy",
+      "pandas",
+      "tqdm",
+      "mpmath",
+    ]);
 
     const diagnosticsJson = await this.pyodide.runPythonAsync(`
 import importlib
@@ -644,6 +693,7 @@ json.dumps(results)
         "Runtime is not initialized. Click 'Initialize Runtime' before running cells.",
       );
     }
+    await this.ensurePackagesForSource(source);
 
     const stdout = [];
     const stderr = [];
@@ -675,6 +725,29 @@ json.dumps(results)
     }
 
     return outputs.length ? outputs : [createStreamOutput("Execution completed with no textual output.", "stdout")];
+  },
+
+  async ensurePackagesForSource(source) {
+    const packageNames = detectBundledPackagesForSource(source);
+    await this.ensurePackagesLoaded(packageNames);
+  },
+
+  async ensurePackagesLoaded(packageNames) {
+    if (!this.pyodide || !Array.isArray(packageNames) || !packageNames.length) {
+      return;
+    }
+    const pendingPackages = packageNames.filter(
+      (packageName) => BUNDLED_PACKAGE_SET.has(packageName) && !this.loadedPackages.has(packageName),
+    );
+    if (!pendingPackages.length) {
+      return;
+    }
+
+    updateKernelState(`Loading package${pendingPackages.length === 1 ? "" : "s"}: ${pendingPackages.join(", ")}`);
+    await this.pyodide.loadPackage(pendingPackages);
+    pendingPackages.forEach((packageName) => {
+      this.loadedPackages.add(packageName);
+    });
   },
 
   async installNotebookHelpers() {
