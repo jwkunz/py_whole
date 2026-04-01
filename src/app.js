@@ -144,8 +144,12 @@ function installGlobalErrorHandlers() {
 const runtimeAdapter = {
   pyodide: null,
   runCellFn: null,
+  initializePromise: null,
 
   async initialize() {
+    if (this.initializePromise) {
+      return this.initializePromise;
+    }
     if (this.pyodide) {
       notebookState.runtimeReady = true;
       updateKernelState("Runtime ready");
@@ -154,31 +158,39 @@ const runtimeAdapter = {
       return;
     }
 
-    if (!EMBEDDED_PYODIDE.available || typeof globalThis.loadPyodide !== "function") {
-      throw new Error("Embedded Pyodide runtime assets are not available in this build.");
-    }
+    this.initializePromise = (async () => {
+      if (!EMBEDDED_PYODIDE.available || typeof globalThis.loadPyodide !== "function") {
+        throw new Error("Embedded Pyodide runtime assets are not available in this build.");
+      }
 
-    updateKernelState("Loading embedded Pyodide");
-    installPyodideAssetFetch();
-    this.pyodide = await globalThis.loadPyodide({
-      indexURL: EMBEDDED_PYODIDE.indexURL,
-      lockFileURL: EMBEDDED_PYODIDE.lockFileURL,
-      stdout: () => {},
-      stderr: () => {},
-    });
-    if (EMBEDDED_PYODIDE.bundledPackages?.length) {
-      updateKernelState("Loading bundled scientific packages");
-      await this.pyodide.loadPackage(EMBEDDED_PYODIDE.bundledPackages);
+      updateKernelState("Loading embedded Pyodide");
+      installPyodideAssetFetch();
+      this.pyodide = await globalThis.loadPyodide({
+        indexURL: EMBEDDED_PYODIDE.indexURL,
+        lockFileURL: EMBEDDED_PYODIDE.lockFileURL,
+        stdout: () => {},
+        stderr: () => {},
+      });
+      if (EMBEDDED_PYODIDE.bundledPackages?.length) {
+        updateKernelState("Loading bundled scientific packages");
+        await this.pyodide.loadPackage(EMBEDDED_PYODIDE.bundledPackages);
+      }
+      await this.installNotebookHelpers();
+      await this.syncWorkspaceFiles();
+      notebookState.runtimeReady = true;
+      await refreshVariableViewer();
+      updateKernelState(
+        `Runtime ready (Pyodide ${EMBEDDED_PYODIDE.version}, ${EMBEDDED_PYODIDE.bundledPackages?.length || 0} bundled packages)`,
+      );
+      syncExecutionUi();
+      renderTerminalOutput();
+    })();
+
+    try {
+      await this.initializePromise;
+    } finally {
+      this.initializePromise = null;
     }
-    await this.installNotebookHelpers();
-    await this.syncWorkspaceFiles();
-    notebookState.runtimeReady = true;
-    await refreshVariableViewer();
-    updateKernelState(
-      `Runtime ready (Pyodide ${EMBEDDED_PYODIDE.version}, ${EMBEDDED_PYODIDE.bundledPackages?.length || 0} bundled packages)`,
-    );
-    syncExecutionUi();
-    renderTerminalOutput();
   },
 
   async restart() {
@@ -5241,9 +5253,16 @@ function bootstrap() {
   renderTerminalOutput();
   wireEvents();
   applyPanelVisibility();
-  updateKernelState(
-    EMBEDDED_PYODIDE.available ? "Embedded runtime ready to initialize" : "Runtime bundle missing",
-  );
+  if (EMBEDDED_PYODIDE.available) {
+    updateKernelState("Initializing embedded runtime");
+    window.setTimeout(() => {
+      runtimeAdapter.initialize().catch((error) => {
+        updateKernelState(`Runtime initialization failed: ${String(error.message || error)}`);
+      });
+    }, 0);
+  } else {
+    updateKernelState("Runtime bundle missing");
+  }
   syncExecutionUi();
 }
 
