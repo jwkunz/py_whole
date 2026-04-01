@@ -16,40 +16,28 @@ __INLINE_CSS__
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand-block brand-block-sidebar">
-          <p class="eyebrow">Notebook Browser</p>
+          <p class="eyebrow">Project Files</p>
           <h1>py_whole</h1>
           <p class="brand-copy">
-            Documents and files for the current local workspace.
+            Files and notebooks for the current local workspace.
           </p>
         </div>
 
         <section class="panel">
-          <h2>Workspace</h2>
-          <input
-            id="workspace-filter-input"
-            class="panel-filter"
-            type="text"
-            placeholder="Filter notebooks"
-            aria-label="Filter notebooks"
-          />
-          <div id="workspace-list" class="workspace-list"></div>
-        </section>
-
-        <section class="panel">
-          <h2>Files</h2>
+          <h2>Project Files</h2>
           <p class="panel-copy workspace-root-label">Root: <code>/workspace</code></p>
           <input
             id="workspace-file-filter-input"
             class="panel-filter"
             type="text"
-            placeholder="Filter files"
-            aria-label="Filter files"
+            placeholder="Filter files and notebooks"
+            aria-label="Filter files and notebooks"
           />
           <div id="workspace-files" class="workspace-tree"></div>
         </section>
 
         <details class="panel panel-collapsible">
-          <summary class="panel-summary">File Editor</summary>
+          <summary class="panel-summary">Selected File</summary>
           <div id="workspace-file-editor-meta" class="panel-copy">
             Select a text file to edit it.
           </div>
@@ -280,7 +268,6 @@ __INLINE_CSS__
               <span class="launcher-card-copy">Copy a plain-text summary of the current runtime check results.</span>
             </button>
           </div>
-          <div id="launcher-recent" class="launcher-recent"></div>
             </section>
 
             <section id="notebook-surface" class="notebook-surface">
@@ -533,7 +520,7 @@ __INLINE_CSS__
             id="quick-open-input"
             class="panel-filter"
             type="text"
-            placeholder="Type a notebook or file name"
+            placeholder="Type a file name"
             aria-label="Quick open"
           />
         </label>

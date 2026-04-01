@@ -45,7 +45,6 @@ const notebookState = {
   terminalEntries: [],
   watches: [],
   filters: {
-    notebooks: "",
     files: "",
   },
   collapsedDirectories: [],
@@ -1725,7 +1724,6 @@ function applyWorkspaceState(state) {
     ? state.collapsedDirectories
     : [];
   notebookState.filters = {
-    notebooks: String(state.filters?.notebooks || ""),
     files: String(state.filters?.files || ""),
   };
   notebookState.panelVisibility =
@@ -1805,9 +1803,18 @@ function syncNotebookWorkspaceFile(notebook, preferredPath = null) {
     return null;
   }
 
-  const linkedFile = notebook.fileId
+  let linkedFile = notebook.fileId
     ? notebookState.workspace.files.find((file) => file.id === notebook.fileId)
     : null;
+  if (!linkedFile) {
+    const preferredNotebookPath = normalizeNotebookWorkspacePath(preferredPath || notebookWorkspacePath(notebook));
+    linkedFile = notebookState.workspace.files.find(
+      (file) => normalizeNotebookWorkspacePath(file.path || file.name) === preferredNotebookPath,
+    ) || null;
+    if (linkedFile) {
+      notebook.fileId = linkedFile.id;
+    }
+  }
   const existingPaths = workspacePathSet(linkedFile?.id || null);
   const desiredPath = normalizeNotebookWorkspacePath(preferredPath || notebookWorkspacePath(notebook));
   const nextPath = linkedFile
@@ -1836,6 +1843,29 @@ function syncNotebookWorkspaceFiles() {
   notebookState.workspace.notebooks.forEach((notebook) => {
     syncNotebookWorkspaceFile(notebook);
   });
+  pruneOrphanedNotebookWorkspaceFiles();
+}
+
+function pruneOrphanedNotebookWorkspaceFiles() {
+  const linkedNotebookFileIds = new Set(
+    notebookState.workspace.notebooks
+      .map((notebook) => notebook.fileId)
+      .filter(Boolean),
+  );
+  notebookState.workspace.files = notebookState.workspace.files.filter((file) => {
+    const isNotebookFile = normalizeWorkspacePath(file.path || file.name).toLowerCase().endsWith(".ipynb");
+    if (!isNotebookFile) {
+      return true;
+    }
+    return linkedNotebookFileIds.has(file.id);
+  });
+
+  if (
+    notebookState.selectedWorkspaceFileId
+    && !notebookState.workspace.files.some((file) => file.id === notebookState.selectedWorkspaceFileId)
+  ) {
+    notebookState.selectedWorkspaceFileId = activeNotebook()?.fileId || null;
+  }
 }
 
 function runtimeDiagnosticByPackageName() {
@@ -2108,45 +2138,6 @@ function renderRuntimeDiagnostics() {
   }
 
   container.replaceChildren(...items);
-}
-
-function renderWorkspaceList() {
-  const list = document.getElementById("workspace-list");
-  const filterText = notebookState.filters.notebooks.trim().toLowerCase();
-  const notebooks = notebookState.workspace.notebooks.filter((notebook) => {
-    if (!filterText) {
-      return true;
-    }
-    return `${notebook.title}.ipynb`.toLowerCase().includes(filterText);
-  });
-  if (!notebooks.length) {
-    const empty = document.createElement("div");
-    empty.className = "workspace-item";
-    empty.textContent = filterText ? "No notebooks match the current filter." : "No notebooks yet.";
-    list.replaceChildren(empty);
-    return;
-  }
-  list.replaceChildren(
-    ...notebooks.map((notebook) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "workspace-item";
-      button.classList.toggle("is-active", notebook.id === notebookState.workspace.activeNotebookId);
-      button.addEventListener("click", () => switchNotebook(notebook.id));
-
-      const title = document.createElement("span");
-      title.className = "workspace-item-title";
-      title.textContent = `${notebook.title}.ipynb`;
-
-      const meta = document.createElement("span");
-      meta.className = "workspace-item-meta";
-      meta.textContent = new Date(notebook.updatedAt).toLocaleString();
-
-      button.disabled = notebookState.execution.busy;
-      button.append(title, meta);
-      return button;
-    }),
-  );
 }
 
 function renderDocumentTabs() {
@@ -2558,75 +2549,6 @@ function renderMainFileSurface() {
   editor.disabled = true;
   saveButton.disabled = true;
   revertButton.disabled = true;
-}
-
-function renderLauncherRecent() {
-  const container = document.getElementById("launcher-recent");
-  if (!container) {
-    return;
-  }
-
-  const notebookCard = document.createElement("div");
-  notebookCard.className = "launcher-recent-card";
-  const notebookTitle = document.createElement("span");
-  notebookTitle.className = "debug-card-title";
-  notebookTitle.textContent = "Recent Notebooks";
-  const notebookList = document.createElement("div");
-  notebookList.className = "launcher-recent-list";
-  if (notebookState.workspace.notebooks.length) {
-    notebookList.replaceChildren(
-      ...notebookState.workspace.notebooks
-        .slice()
-        .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
-        .slice(0, 5)
-        .map((notebook) => {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = "workspace-item";
-          button.textContent = `${notebook.title}.ipynb`;
-          button.addEventListener("click", () => setActiveDocument("notebook", notebook.id));
-          return button;
-        }),
-    );
-  } else {
-    const empty = document.createElement("div");
-    empty.className = "panel-copy";
-    empty.textContent = "No notebooks yet.";
-    notebookList.append(empty);
-  }
-  notebookCard.append(notebookTitle, notebookList);
-
-  const fileCard = document.createElement("div");
-  fileCard.className = "launcher-recent-card";
-  const fileTitle = document.createElement("span");
-  fileTitle.className = "debug-card-title";
-  fileTitle.textContent = "Recent Files";
-  const fileList = document.createElement("div");
-  fileList.className = "launcher-recent-list";
-  if (notebookState.workspace.files.length) {
-    fileList.replaceChildren(
-      ...notebookState.workspace.files
-        .slice()
-        .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
-        .slice(0, 5)
-        .map((file) => {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = "workspace-item";
-          button.textContent = file.path || file.name;
-          button.addEventListener("click", () => selectWorkspaceFile(file.id));
-          return button;
-        }),
-    );
-  } else {
-    const empty = document.createElement("div");
-    empty.className = "panel-copy";
-    empty.textContent = "No workspace files yet.";
-    fileList.append(empty);
-  }
-  fileCard.append(fileTitle, fileList);
-
-  container.replaceChildren(notebookCard, fileCard);
 }
 
 function quickOpenEntries() {
@@ -3586,11 +3508,9 @@ function renderNotebook() {
   const cellsRoot = document.getElementById("notebook-cells");
   const template = document.getElementById("cell-template");
   const nextRunnableCell = nextRunnableNotebookCell(notebook);
-  renderWorkspaceList();
   renderWorkspaceFiles();
   renderDocumentTabs();
   renderMainFileSurface();
-  renderLauncherRecent();
 
   const showingLauncher = active.type === "launcher";
   const showingFile = active.type === "file";
@@ -3598,7 +3518,7 @@ function renderNotebook() {
   launcherSurface.classList.toggle("is-hidden", !showingLauncher);
   notebookSurface.classList.toggle("is-hidden", !showingNotebook);
   fileSurface.classList.toggle("is-hidden", !showingFile);
-  eyebrow.textContent = showingLauncher ? "Launcher" : showingFile ? "Workspace File" : "Notebook";
+  eyebrow.textContent = showingLauncher ? "Launcher" : showingFile ? "File" : "Notebook";
   titleInput.disabled = !showingNotebook || notebookState.execution.busy || notebookState.debug.active;
 
   cellsRoot.replaceChildren(
@@ -4718,22 +4638,18 @@ function wireEvents() {
       }
       notebook.title = stripNotebookExtension(event.target.value);
       notebook.updatedAt = new Date().toISOString();
-      renderWorkspaceList();
+      syncNotebookWorkspaceFile(notebook, normalizeNotebookWorkspacePath(`${notebook.title}.ipynb`));
+      renderWorkspaceFiles();
+      renderDocumentTabs();
       scheduleAutosave();
     });
-  document
-    .getElementById("workspace-filter-input")
-    .addEventListener("input", (event) => {
-      notebookState.filters.notebooks = event.target.value;
-      renderWorkspaceList();
-    });
-  document
-    .getElementById("workspace-file-filter-input")
-    .addEventListener("input", (event) => {
+  const workspaceFileFilterInput = document.getElementById("workspace-file-filter-input");
+  if (workspaceFileFilterInput) {
+    workspaceFileFilterInput.addEventListener("input", (event) => {
       notebookState.filters.files = event.target.value;
       renderWorkspaceFiles();
-      renderLauncherRecent();
     });
+  }
   document
     .getElementById("quick-open-input")
     .addEventListener("input", (event) => {
@@ -4862,7 +4778,9 @@ function switchNotebook(notebookId) {
   if (notebookState.workspace.activeNotebookId === notebookId) {
     return;
   }
+  const notebook = notebookState.workspace.notebooks.find((entry) => entry.id === notebookId);
   notebookState.workspace.activeNotebookId = notebookId;
+  notebookState.selectedWorkspaceFileId = notebook?.fileId || null;
   notebookState.workspace.activeDocument = { type: "notebook", id: notebookId };
   syncNotebookTitle();
   renderNotebook();
@@ -5258,8 +5176,10 @@ function bootstrap() {
       "help-support-panel": true,
     };
   }
-  document.getElementById("workspace-filter-input").value = notebookState.filters.notebooks;
-  document.getElementById("workspace-file-filter-input").value = notebookState.filters.files;
+  const workspaceFileFilterInput = document.getElementById("workspace-file-filter-input");
+  if (workspaceFileFilterInput) {
+    workspaceFileFilterInput.value = notebookState.filters.files;
+  }
   syncNotebookTitle();
   renderNotebook();
   renderVariableViewer([]);
