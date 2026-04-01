@@ -438,6 +438,22 @@ def _pywhole_capture_figures():
         _pywhole_push_output({"kind": "image", "mime": "image/png", "data": encoded})
     plt.close("all")
 
+def _pywhole_capture_specific_figure(figure):
+    try:
+        import io
+        import matplotlib.pyplot as plt
+    except Exception:
+        return
+
+    if figure is None:
+        return
+
+    buffer = io.BytesIO()
+    figure.savefig(buffer, format="png", bbox_inches="tight")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    _pywhole_push_output({"kind": "image", "mime": "image/png", "data": encoded})
+    plt.close(figure)
+
 def _pywhole_patch_matplotlib():
     try:
         import matplotlib
@@ -445,15 +461,32 @@ def _pywhole_patch_matplotlib():
         matplotlib.rcParams["backend"] = "Agg"
         import matplotlib.pyplot as plt
         plt.switch_backend("Agg")
+        from matplotlib._pylab_helpers import Gcf
 
         def _pywhole_show(*args, **kwargs):
+            managers = list(Gcf.get_all_fig_managers())
+            if managers:
+                for manager in managers:
+                    figure = getattr(manager, "canvas", None)
+                    figure = getattr(figure, "figure", None)
+                    _pywhole_capture_specific_figure(figure)
+                return None
             _pywhole_capture_figures()
             return None
 
         plt.show = _pywhole_show
         try:
             import matplotlib.figure as _pywhole_figure
-            _pywhole_figure.Figure.show = lambda self, *args, **kwargs: _pywhole_show()
+            _pywhole_figure.Figure.show = lambda self, *args, **kwargs: _pywhole_capture_specific_figure(self)
+        except Exception:
+            pass
+        try:
+            import matplotlib.backend_bases as _pywhole_backend_bases
+            _pywhole_backend_bases.FigureManagerBase.show = (
+                lambda self, *args, **kwargs: _pywhole_capture_specific_figure(
+                    getattr(getattr(self, "canvas", None), "figure", None),
+                )
+            )
         except Exception:
             pass
         plt.pause = lambda *args, **kwargs: None
@@ -1097,6 +1130,7 @@ function endExecution() {
   notebookState.execution.runAll = false;
   notebookState.execution.interruptRequested = false;
   syncExecutionUi();
+  renderNotebook();
 }
 
 function requestInterrupt() {
@@ -3417,7 +3451,7 @@ function renderNotebook() {
           return;
         }
         notebookState.focusedCellId = cell.id;
-        renderNotebook();
+        syncExecutionUi();
       });
       article.classList.toggle(
         "is-running",
@@ -3527,7 +3561,7 @@ function renderNotebook() {
       moveDownButton.addEventListener("click", () => moveCell(cell.id, 1));
       editor.addEventListener("focus", () => {
         notebookState.focusedCellId = cell.id;
-        renderNotebook();
+        syncExecutionUi();
       });
       editor.addEventListener("keydown", (event) => {
         if (cell.cellType !== "code") {
@@ -4048,8 +4082,12 @@ async function executeCodeCell(cell, notebook, options = {}) {
 
   notebook.updatedAt = new Date().toISOString();
   renderNotebook();
-  await refreshVariableViewer();
-  await refreshWatchViewer();
+  try {
+    await refreshVariableViewer();
+    await refreshWatchViewer();
+  } catch (error) {
+    updateKernelState(`Post-run refresh error: ${String(error.message || error)}`);
+  }
   scheduleAutosave();
 }
 
@@ -4065,8 +4103,11 @@ async function runCell(cellId) {
   }
 
   beginExecution(cell.id, { runAll: false });
-  await executeCodeCell(cell, notebook);
-  endExecution();
+  try {
+    await executeCodeCell(cell, notebook);
+  } finally {
+    endExecution();
+  }
 }
 
 async function runCellAndAdvance(cellId) {
@@ -4089,26 +4130,27 @@ async function runAllCells() {
   if (!notebook || notebookState.execution.busy) {
     return;
   }
-  for (const cell of notebook.cells) {
-    if (cell.cellType !== "code") {
-      continue;
-    }
+  try {
+    for (const cell of notebook.cells) {
+      if (cell.cellType !== "code") {
+        continue;
+      }
 
-    beginExecution(cell.id, { runAll: true });
-    await executeCodeCell(cell, notebook, {
-      runningLabel: `Running all cells (active cell ${cell.id})`,
-    });
+      beginExecution(cell.id, { runAll: true });
+      await executeCodeCell(cell, notebook, {
+        runningLabel: `Running all cells (active cell ${cell.id})`,
+      });
 
-    if (notebookState.execution.interruptRequested) {
-      endExecution();
-      updateKernelState("Run all interrupted after the current cell completed.");
-      renderNotebook();
-      scheduleAutosave();
-      return;
+      if (notebookState.execution.interruptRequested) {
+        updateKernelState("Run all interrupted after the current cell completed.");
+        renderNotebook();
+        scheduleAutosave();
+        return;
+      }
     }
+  } finally {
+    endExecution();
   }
-
-  endExecution();
   updateKernelState("Runtime ready");
   renderNotebook();
   scheduleAutosave();
@@ -5003,10 +5045,10 @@ function bootstrap() {
   loadNotebookFromStorage();
   if (!Object.keys(notebookState.panelVisibility || {}).length) {
     notebookState.panelVisibility = {
-      watch-viewer: true,
-      debug-viewer: true,
-      terminal-output: true,
-      help-support-panel: true,
+      "watch-viewer": true,
+      "debug-viewer": true,
+      "terminal-output": true,
+      "help-support-panel": true,
     };
   }
   document.getElementById("workspace-filter-input").value = notebookState.filters.notebooks;
