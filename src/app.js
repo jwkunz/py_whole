@@ -5065,6 +5065,18 @@ function wireEvents() {
       button.closest(".menu-group")?.removeAttribute("open");
     });
   });
+  document.querySelectorAll(".notebook-menubar .menu-group").forEach((menu) => {
+    menu.addEventListener("toggle", () => {
+      if (!menu.hasAttribute("open")) {
+        return;
+      }
+      document.querySelectorAll(".notebook-menubar .menu-group[open]").forEach((otherMenu) => {
+        if (otherMenu !== menu) {
+          otherMenu.removeAttribute("open");
+        }
+      });
+    });
+  });
   wireLayoutResizer("left-column-resizer", (event) => {
     const appShell = document.querySelector(".app-shell");
     if (!appShell) {
