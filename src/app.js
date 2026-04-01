@@ -3762,6 +3762,14 @@ function clearCellOutput(cellId) {
   scheduleAutosave();
 }
 
+function clearActiveCellOutput() {
+  const selected = selectedCodeCell();
+  if (!selected) {
+    return;
+  }
+  clearCellOutput(selected.id);
+}
+
 function clearAllOutputs() {
   const notebook = activeNotebook();
   if (!notebook || notebookState.execution.busy) {
@@ -4411,7 +4419,7 @@ function wireEvents() {
   });
   bindClick("stop-debug", () => stopDebugSession());
   bindClick("toolbar-run-all", runAllCells);
-  bindClick("menu-clear-outputs-cell", clearAllOutputs);
+  bindClick("menu-clear-outputs-cell", clearActiveCellOutput);
   bindClick("toolbar-run-active-cell", () => {
     void runActiveCell();
   });
