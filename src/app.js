@@ -4789,6 +4789,11 @@ function wireEvents() {
     });
   });
   document.addEventListener("click", (event) => {
+    const menuAction = event.target.closest(".menu-group .menu-action");
+    if (menuAction) {
+      menuAction.closest(".menu-group")?.removeAttribute("open");
+      return;
+    }
     if (event.target.closest(".menu-group")) {
       return;
     }
