@@ -1,199 +1,111 @@
 # Roadmap
 
-## Development Strategy
+## Status
 
-The project should move quickly by validating the hardest constraints early:
+The original spike roadmap is effectively complete through the core product proof:
 
-1. single-file offline packaging
-2. in-browser Python execution with acceptable runtime performance
-3. notebook editing and output rendering
-4. package feasibility
-5. advanced environment features such as workspace, terminal, and debugging
+- single-file offline packaging exists
+- embedded Pyodide execution works offline
+- notebook editing, execution, markdown, and persistence exist
+- `.ipynb` import and export exist
+- a multi-document workspace and workspace file model exist
+- variable, watch, terminal, debugger, runtime diagnostics, and package-help surfaces exist
 
-The roadmap below is intentionally phased to reduce technical risk before investing in broad UI surface area.
+That means the project is no longer in the "prove the concept" stage. The next work should focus on hardening, validation, and narrowing the gap between "implemented" and "reliably usable."
 
-## Phase 0: Technical Spike and Packaging Baseline
+## Current Product Audit
 
-Objective: prove that the core runtime can exist as a single offline HTML artifact.
+### Completed Foundation
 
-Deliverables:
+- Single HTML build pipeline with embedded JavaScript, CSS, Pyodide runtime, and bundled package assets
+- Offline Python execution in modern browsers
+- Notebook cell editing, insertion, deletion, duplication, reordering, and execution
+- Markdown cells with rendered preview and math presentation
+- Browser-storage persistence and recovery
+- `.ipynb` import and export
+- Multi-notebook workspace shell with document tabs and launcher
+- Workspace file import, export, preview, filtering, editing, rename, move, and folder creation
+- Runtime diagnostics and package inventory/help UI
+- Variable viewer, variable inspector, watch expressions, and a browser Python console
+- Initial debugger flow with breakpoints, pause/continue/step mechanics, and keyboard shortcuts
 
-- Minimal source app and build script structure
-- Single HTML output containing the app shell
-- Embedded Pyodide or equivalent Python/WASM runtime
-- Offline startup with no network requests
-- Measurement of artifact size, startup time, and memory profile
-- Feasibility report for bundling strategy and package loading model
+### Still Partial
 
-Exit criteria:
+- Scientific package expansion beyond the currently bundled subset
+- Rich-output coverage beyond the currently supported MIME and plotting paths
+- Terminal ergonomics and clear product framing for the console model
+- Debugging depth relative to the original VS Code-style aspiration
+- Regression-tested confidence in the newest menubar and workbench refactors
 
-- The app opens locally with no network access
-- Python executes in-browser
-- The packaging approach is credible enough to continue
+### Known Constraints
 
-## Phase 1: Notebook Editing and Basic Python Execution
+- The app remains primarily implemented in one large file: `src/app.js`
+- Runtime restart is still a full page reload because Pyodide does not support a second runtime instance in the same global scope
+- The package UI lists some desired packages that are not yet embedded in the shipped runtime
+- Some recently moved UI surfaces still need validation after the workbench refactor
 
-Objective: deliver the first useful proof of concept centered on a single notebook.
+## Phase 10: Verification and Product Hardening
 
-Deliverables:
+Objective: turn the current feature-rich prototype into a more reliable and internally coherent offline notebook environment.
 
-- Single-notebook UI
-- Rich code-cell editor
-- Add/remove/reorder code cells
-- Execute code cells
-- Render text outputs
-- Execution state and basic kernel controls
-- New notebook creation
+### Deliverables
 
-Exit criteria:
+- End-to-end verification of all top-menubar actions and launcher actions
+- Regression pass for `.ipynb` import/export and workspace file import/export flows
+- Validation of multi-cell `matplotlib` workflows, especially repeated `plt.show()`
+- Validation of the bottom `Debug` and `Terminal` utility panels after their relocation
+- UX cleanup for side-rail density, notebook readability, and panel placement
+- Clear documentation of what is truly bundled versus only planned in the package inventory
+- Cleanup of stale docs so requirements, roadmap, README, and handoff notes describe the current product accurately
 
-- A user can create a notebook, add code cells, execute Python, and see outputs in a local offline HTML file
+### Exit Criteria
 
-## Phase 2: Plotting and Notebook Structure
+- The primary notebook, workspace, runtime, and diagnostics workflows all pass manual verification without known blocking regressions
+- The UI layout feels intentional and coherent on both desktop and narrow-width layouts
+- The package/help surfaces do not overstate runtime capabilities
+- The docs describe the current product and the next set of engineering priorities accurately
 
-Objective: make the proof of concept feel recognizably notebook-like for scientific work.
+## Proposed Work Breakdown For Phase 10
 
-Deliverables:
+### 1. Functional Verification
 
-- Inline plotting support
-- `matplotlib` integration
-- Evaluation of interactive plotting support via `plotly` or `bokeh`
-- Notebook metadata structure aligned with `.ipynb`
-- Serialization of notebooks in notebook-compatible JSON form
+- File menu actions
+- Cell menu actions
+- Kernel menu actions
+- Help/runtime actions
+- Launcher shortcuts
+- Quick-open and command-palette actions
+- Notebook import/export
+- Workspace file import/export/editing
 
-Exit criteria:
+### 2. Runtime and Plotting Validation
 
-- Scientific users can execute basic plotting workflows in the offline notebook
+- Re-test runtime initialization and restart flows
+- Re-test runtime diagnostics output and report insertion
+- Re-test `matplotlib` figure capture across multiple cells
+- Re-test package demo snippets against the actually bundled runtime set
 
-## Phase 3: Markdown and Persistence
+### 3. UX Tightening
 
-Objective: close the gap between code-only execution and actual notebook authoring.
+- Reduce visual crowding in the side rails
+- Tighten notebook document typography and vertical spacing
+- Re-evaluate whether `Watch` belongs in the right rail or in the bottom utility area
+- Simplify launcher presentation now that the workbench is the primary product surface
 
-Deliverables:
+### 4. Documentation and Product Framing
 
-- Markdown cells
-- Markdown preview/rendering
-- Math/LaTeX rendering
-- Autosave to browser storage
-- Recovery on reload or tab close
-- Explicit save/load behavior for notebooks
+- Keep requirements as the broad product target
+- Use the roadmap as the live implementation status and near-term plan
+- Keep handoff notes focused on architecture, constraints, and immediate validation work
+- Update README so it describes the current workbench instead of an initial scaffold
 
-Exit criteria:
+## After Phase 10
 
-- A user can author a mixed code/Markdown notebook and recover it after reopening the app
+If Phase 10 closes cleanly, the next decision should be made from a position of verified behavior rather than speculative scope. At that point the likely branches are:
 
-## Phase 4: Import/Export and `.ipynb` Compatibility
+- broaden the bundled scientific stack
+- deepen rich-output compatibility
+- improve debugger fidelity
+- refactor `src/app.js` into maintainable modules
 
-Objective: interoperate with external notebook workflows and arbitrary user files.
-
-Deliverables:
-
-- Import existing `.ipynb`
-- Export `.ipynb`
-- Arbitrary file import into the virtual filesystem
-- Arbitrary file export from the virtual filesystem
-- Compatibility validation for Python and Markdown cells
-
-Exit criteria:
-
-- A user can exchange notebooks and data files between the browser app and their local machine
-
-## Phase 5: Workspace and Multi-Notebook UX
-
-Objective: move from a single-document proof of concept toward a practical environment.
-
-Deliverables:
-
-- Multi-notebook support
-- Workspace model
-- Jupyter-style file browser
-- Notebook switching and file navigation
-- Better document lifecycle management
-
-Exit criteria:
-
-- Users can work on more than one notebook and manage files in a coherent offline workspace
-
-## Phase 6: Scientific Package Expansion
-
-Objective: broaden the built-in scientific stack while preserving runtime performance.
-
-Deliverables:
-
-- Integrate required packages that are feasible in-browser
-- Publish an in-app package inventory/help panel
-- Feasibility decisions for:
-  - `opencv-python`
-  - `scikit-learn`
-  - `xarray`
-  - `statsmodels`
-  - `networkx`
-  - `scikit-image`
-  - `seaborn`
-  - `mpmath`
-  - `pint`
-  - `h5py`
-  - `netCDF4`
-
-Exit criteria:
-
-- The package set is explicit, documented, and tested against representative notebook workflows
-
-## Phase 7: Rich Output and Media Support
-
-Objective: support a broader set of notebook display behaviors.
-
-Deliverables:
-
-- HTML output rendering
-- image output handling
-- media embeds
-- widget feasibility assessment and implementation where practical
-- interactive plotting polish
-
-Exit criteria:
-
-- The notebook can display a broad range of rich outputs expected by scientific users
-
-## Phase 8: Terminal and Environment Tooling
-
-Objective: expand the environment beyond notebook cells.
-
-Deliverables:
-
-- Browser terminal experience
-- Filesystem access through the terminal
-- Clear constraints around shell-like versus Python-console behavior
-
-Exit criteria:
-
-- The terminal is useful and coherent within the offline browser environment
-
-## Phase 9: Debugging and Inspection
-
-Objective: deliver the advanced development ergonomics requested for the product.
-
-Deliverables:
-
-- Breakpoints
-- Step over/into/out
-- Call stack
-- Watch expressions
-- Variable explorer
-- Debug UX aligned with notebook workflows
-
-Exit criteria:
-
-- Debugging workflows are usable enough to support real notebook development
-
-## Suggested Immediate Next Step
-
-Start with Phase 0 and Phase 1 together in one spike:
-
-- create a minimal browser app source structure
-- embed the Python runtime
-- prove single-file offline packaging
-- implement a single code cell backed by a rich editor
-- execute Python and render text output
-
-This is the shortest path to validating whether the product direction is technically viable.
+That choice should be driven by the results of the verification pass rather than by the original spike roadmap.

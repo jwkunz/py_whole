@@ -1,6 +1,6 @@
 # Agent Handoff Notes
 
-## Current UI Shape
+## Current Product Shape
 
 - The app now uses a true three-region workbench:
   - left rail: workspace and file management
@@ -14,6 +14,7 @@
 ## Important Implementation Notes
 
 - Main logic is still concentrated in `src/app.js`.
+- The project has moved beyond the original proof-of-concept roadmap. The codebase now contains a broad offline notebook workbench, but several newer surfaces still need verification and polish.
 - The previous `wireCommandMirrors()` mechanism is gone. There are no remaining `data-command` attributes in `src/index.html`.
 - Every `getElementById(...)` reference in `src/app.js` now points to a real DOM node in `src/index.html`.
 - `updateActiveCellToolbar()` now only updates the active-cell indicator text. It no longer manages removed run-scope buttons.
@@ -50,6 +51,23 @@
   - reapplying the matplotlib patch inside `_pywhole_run_cell`
 - This still needs verification with a multi-cell plotting workflow.
 
+## Documentation Direction
+
+- `docs/requirements.md` should remain the broad product target.
+- `docs/roadmap.md` should describe actual implementation status plus the next iteration plan.
+- This handoff doc should stay focused on architecture, current constraints, and the immediate verification backlog.
+
+## Phase 10 Focus
+
+The next iteration should be a verification and hardening pass rather than another large feature spike.
+
+Primary goals:
+
+- validate the newest workbench refactors end to end
+- tighten UX where the product feels crowded or ambiguous
+- align package/help surfaces with the true bundled runtime
+- leave the project with a reliable baseline for the next major capability decision
+
 ## What Still Needs Verification
 
 1. Verify all top-menubar actions after the direct-wiring cleanup:
@@ -61,6 +79,8 @@
 3. Verify `Packages` and `Runtime` controls still make sense in the left rail and do not crowd file management.
 4. Re-test `.ipynb` import/export and workspace file import after removing the hidden legacy controls.
 5. Re-test `plt.show()` across multiple cells.
+6. Re-test runtime diagnostics report copy/insert flows from both the launcher and menubar.
+7. Re-test command-palette actions that mutate notebooks, files, watches, and diagnostics state.
 
 ## Suggested Next UX Pass
 
@@ -68,7 +88,8 @@
 - Reduce decorative framing in the side rails further.
 - Decide whether `Watch` should stay in the right rail or move into the bottom utility area with `Debug`.
 - Consider whether the launcher should be visually simplified now that the main workbench is much closer to the target interaction model.
+- Consider trimming duplicated file-editing affordances if the sidebar and main-surface editors feel redundant in practice.
 
 ## Last Relevant Commit Before Next Work
 
-- Working tree after menubar refactor, three-column layout cleanup, and direct event wiring.
+- `e055065` - workbench refactor, three-column cleanup, and direct event wiring.
