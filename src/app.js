@@ -10,11 +10,8 @@ const SCIENTIFIC_PACKAGES = [
   "statsmodels",
   "networkx",
   "scikit-image",
-  "plotly",
   "bokeh",
-  "seaborn",
   "mpmath",
-  "pint",
 ];
 
 const RUNTIME_DIAGNOSTIC_IMPORTS = [
@@ -29,11 +26,8 @@ const RUNTIME_DIAGNOSTIC_IMPORTS = [
   ["statsmodels", "statsmodels"],
   ["networkx", "networkx"],
   ["scikit-image", "skimage"],
-  ["plotly", "plotly"],
   ["bokeh", "bokeh"],
-  ["seaborn", "seaborn"],
   ["mpmath", "mpmath"],
-  ["pint", "pint"],
 ];
 
 const notebookState = {
@@ -141,6 +135,15 @@ function bundledPackageNameForImport(moduleName) {
       return "scikit-image";
     default:
       return rootModule;
+  }
+}
+
+function pyodidePackageName(packageName) {
+  switch (packageName) {
+    case "opencv":
+      return "opencv-python";
+    default:
+      return packageName;
   }
 }
 
@@ -582,6 +585,12 @@ const runtimeAdapter = {
       "sympy",
       "pandas",
       "tqdm",
+      "opencv",
+      "xarray",
+      "statsmodels",
+      "networkx",
+      "scikit-image",
+      "bokeh",
       "mpmath",
     ]);
 
@@ -744,7 +753,7 @@ json.dumps(results)
     }
 
     updateKernelState(`Loading package${pendingPackages.length === 1 ? "" : "s"}: ${pendingPackages.join(", ")}`);
-    await this.pyodide.loadPackage(pendingPackages);
+    await this.pyodide.loadPackage(pendingPackages.map(pyodidePackageName));
     pendingPackages.forEach((packageName) => {
       this.loadedPackages.add(packageName);
     });
@@ -2425,16 +2434,10 @@ function packageDemoSnippet(packageName) {
       return "import networkx as nx\n\ngraph = nx.path_graph(4)\nlist(graph.edges())";
     case "scikit-image":
       return "import numpy as np\nfrom skimage import filters\n\nimage = np.array([[0.0, 0.2], [0.7, 1.0]])\nfilters.sobel(image)";
-    case "plotly":
-      return "import plotly.graph_objects as go\n\nfig = go.Figure(data=go.Bar(y=[2, 3, 1]))\nfig.to_dict()['data'][0]['type']";
     case "bokeh":
       return "from bokeh.plotting import figure\n\nplot = figure(title='py_whole bokeh demo')\nplot.title.text";
-    case "seaborn":
-      return "import seaborn as sns\n\nsns.get_dataset_names()[:5]";
     case "mpmath":
       return "import mpmath as mp\n\nmp.sqrt(2)";
-    case "pint":
-      return "import pint\n\nureg = pint.UnitRegistry()\n(3 * ureg.meter / ureg.second).to('kilometer/hour')";
     default:
       return `${packageImportSnippet(packageName)}\n\n${packageModuleName(packageName)}.__dict__.get('__version__', 'loaded')`;
   }
