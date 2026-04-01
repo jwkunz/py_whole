@@ -13,11 +13,14 @@ const template = fs.readFileSync(path.join(srcDir, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(srcDir, "styles.css"), "utf8");
 const appJs = fs.readFileSync(path.join(srcDir, "app.js"), "utf8");
 const runtime = loadEmbeddedRuntime(rootDir);
+const editorAssets = loadEmbeddedEditorAssets(rootDir);
 
 const html = template
+  .replace("__INLINE_EDITOR_CSS__", editorAssets.css)
   .replace("__INLINE_CSS__", css)
   .replace("__INLINE_RUNTIME_BOOTSTRAP__", runtime.bootstrap)
   .replace("__INLINE_RUNTIME_LOADER__", runtime.loader)
+  .replace("__INLINE_EDITOR_JS__", editorAssets.js)
   .replace("__INLINE_JS__", escapeInlineScript(appJs));
 
 fs.writeFileSync(outFile, html);
@@ -107,4 +110,34 @@ function loadBundledPackages(projectRoot) {
 
   names.sort();
   return { names, files };
+}
+
+function loadEmbeddedEditorAssets(projectRoot) {
+  const editorDir = path.join(projectRoot, "vendor", "codemirror");
+  if (!fs.existsSync(editorDir)) {
+    return {
+      css: "",
+      js: "",
+    };
+  }
+
+  const css = fs.readFileSync(path.join(editorDir, "lib", "codemirror.min.css"), "utf8");
+  const jsFiles = [
+    ["lib", "codemirror.min.js"],
+    ["addon", "edit", "closebrackets.min.js"],
+    ["addon", "edit", "matchbrackets.min.js"],
+    ["mode", "xml", "xml.min.js"],
+    ["mode", "javascript", "javascript.min.js"],
+    ["mode", "css", "css.min.js"],
+    ["mode", "htmlmixed", "htmlmixed.min.js"],
+    ["mode", "markdown", "markdown.min.js"],
+    ["mode", "python", "python.min.js"],
+  ];
+
+  const js = jsFiles
+    .map((parts) => fs.readFileSync(path.join(editorDir, ...parts), "utf8"))
+    .map(escapeInlineScript)
+    .join("\n");
+
+  return { css, js };
 }

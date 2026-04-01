@@ -95,6 +95,164 @@ const MIN_INSPECTOR_WIDTH = 228;
 const MIN_CENTER_WIDTH = 520;
 const LAYOUT_RESIZER_SIZE = 10;
 
+function codeMirrorAvailable() {
+  return typeof globalThis.CodeMirror === "function";
+}
+
+function editorModeForPath(path) {
+  const lowerPath = String(path || "").toLowerCase();
+  if (lowerPath.endsWith(".py")) {
+    return { name: "python", version: 3 };
+  }
+  if (lowerPath.endsWith(".md")) {
+    return "markdown";
+  }
+  if (lowerPath.endsWith(".json")) {
+    return { name: "javascript", json: true };
+  }
+  if (lowerPath.endsWith(".js") || lowerPath.endsWith(".mjs")) {
+    return "javascript";
+  }
+  if (lowerPath.endsWith(".css")) {
+    return "css";
+  }
+  if (lowerPath.endsWith(".html")) {
+    return "htmlmixed";
+  }
+  if (lowerPath.endsWith(".xml") || lowerPath.endsWith(".svg")) {
+    return "xml";
+  }
+  return null;
+}
+
+function editorModeForCell(cell) {
+  if (cell?.cellType === "markdown") {
+    return "markdown";
+  }
+  return { name: "python", version: 3 };
+}
+
+function editorInstance(textarea) {
+  return textarea?._pywholeCodeMirror || null;
+}
+
+function setEditorValue(textarea, value) {
+  if (!textarea) {
+    return;
+  }
+  const nextValue = String(value || "");
+  const editor = editorInstance(textarea);
+  if (editor) {
+    if (editor.getValue() !== nextValue) {
+      editor.setValue(nextValue);
+    }
+    editor.refresh();
+    return;
+  }
+  textarea.value = nextValue;
+}
+
+function setEditorReadOnly(textarea, readOnly) {
+  if (!textarea) {
+    return;
+  }
+  const editor = editorInstance(textarea);
+  if (editor) {
+    editor.setOption("readOnly", Boolean(readOnly));
+    editor.refresh();
+    return;
+  }
+  textarea.disabled = Boolean(readOnly);
+}
+
+function setEditorMode(textarea, mode) {
+  const editor = editorInstance(textarea);
+  if (editor) {
+    editor.setOption("mode", mode);
+    editor.refresh();
+  }
+}
+
+function focusEditor(textarea) {
+  const editor = editorInstance(textarea);
+  if (editor) {
+    editor.focus();
+    return;
+  }
+  textarea?.focus();
+}
+
+function createCodeMirrorEditor(textarea, options = {}) {
+  if (!textarea || !codeMirrorAvailable()) {
+    return null;
+  }
+  if (textarea._pywholeCodeMirror) {
+    return textarea._pywholeCodeMirror;
+  }
+
+  const editor = globalThis.CodeMirror.fromTextArea(textarea, {
+    autoCloseBrackets: options.autoCloseBrackets ?? false,
+    lineNumbers: false,
+    lineWrapping: true,
+    matchBrackets: options.matchBrackets ?? false,
+    mode: options.mode ?? null,
+    readOnly: Boolean(options.readOnly),
+    scrollbarStyle: "native",
+    viewportMargin: Infinity,
+  });
+  textarea._pywholeCodeMirror = editor;
+  window.setTimeout(() => editor.refresh(), 0);
+  return editor;
+}
+
+function syncWorkspaceFileDraft(value, sourceId = null) {
+  const nextValue = String(value || "");
+  notebookState.workspaceFileDraft = nextValue;
+
+  for (const editorId of ["workspace-file-editor", "file-surface-editor"]) {
+    if (editorId === sourceId) {
+      continue;
+    }
+    const textarea = document.getElementById(editorId);
+    if (!textarea) {
+      continue;
+    }
+    const editor = editorInstance(textarea);
+    if (editor) {
+      if (editor.getValue() !== nextValue) {
+        editor.setValue(nextValue);
+      }
+    } else if (textarea.value !== nextValue) {
+      textarea.value = nextValue;
+    }
+  }
+}
+
+function bindWorkspaceFileEditor(editorId) {
+  const textarea = document.getElementById(editorId);
+  if (!textarea || textarea.dataset.editorBound === "true") {
+    return;
+  }
+
+  const editor = createCodeMirrorEditor(textarea, {
+    autoCloseBrackets: true,
+    matchBrackets: true,
+    mode: editorModeForPath(selectedWorkspaceFile()?.path || selectedWorkspaceFile()?.name || ""),
+  });
+
+  if (editor) {
+    editor.on("change", (instance) => {
+      syncWorkspaceFileDraft(instance.getValue(), editorId);
+    });
+  } else {
+    textarea.addEventListener("input", (event) => {
+      syncWorkspaceFileDraft(event.target.value, editorId);
+    });
+  }
+
+  textarea.dataset.editorBound = "true";
+}
+
 function generateId(prefix) {
   if (globalThis.crypto?.randomUUID) {
     return `${prefix}-${globalThis.crypto.randomUUID()}`;
@@ -1322,6 +1480,9 @@ function syncExecutionUi() {
 
   const renameWorkspaceFileButton = document.getElementById("menu-rename-workspace-file");
   if (renameWorkspaceFileButton) {
+    renameWorkspaceFileButton.textContent = selectedFile && isLinkedNotebookFile(selectedFile)
+      ? "Rename Notebook"
+      : "Rename Workspace File";
     renameWorkspaceFileButton.disabled = locked || !selectedFile;
   }
 
@@ -1385,9 +1546,7 @@ function canRunCell(cellId) {
 
 function focusCellEditor(cellId) {
   const editor = document.querySelector(`.cell[data-cell-id="${cellId}"] .cell-editor`);
-  if (editor) {
-    editor.focus();
-  }
+  focusEditor(editor);
 }
 
 function quotedWorkspacePath(file) {
@@ -1488,6 +1647,10 @@ function activeNotebook() {
 
 function notebookForFileId(fileId) {
   return notebookState.workspace.notebooks.find((notebook) => notebook.fileId === fileId) || null;
+}
+
+function isLinkedNotebookFile(file) {
+  return Boolean(file?.id && notebookForFileId(file.id));
 }
 
 function activeDocument() {
@@ -2573,7 +2736,7 @@ function renderWorkspaceTreeNodes(tree, parentPath = "", depth = 0) {
     const renameButton = document.createElement("button");
     renameButton.type = "button";
     renameButton.className = "secondary";
-    renameButton.textContent = "Rename";
+    renameButton.textContent = isLinkedNotebookFile(file) ? "Rename Notebook" : "Rename";
     renameButton.addEventListener("click", (event) => {
       event.stopPropagation();
       renameWorkspaceFile(file.id);
@@ -2675,8 +2838,8 @@ function renderWorkspaceFileEditor() {
   if (!file) {
     meta.textContent = "Select a text file to edit it.";
     preview.replaceChildren();
-    editor.value = "";
-    editor.disabled = true;
+    setEditorValue(editor, "");
+    setEditorReadOnly(editor, true);
     saveButton.disabled = true;
     revertButton.disabled = true;
     return;
@@ -2686,15 +2849,16 @@ function renderWorkspaceFileEditor() {
   preview.replaceChildren(...buildWorkspaceFilePreviewNodes(file));
 
   if (isLikelyTextFile(file)) {
-    editor.value = notebookState.workspaceFileDraft;
-    editor.disabled = notebookState.execution.busy;
+    setEditorMode(editor, editorModeForPath(file.path || file.name));
+    setEditorValue(editor, notebookState.workspaceFileDraft);
+    setEditorReadOnly(editor, notebookState.execution.busy);
     saveButton.disabled = notebookState.execution.busy;
     revertButton.disabled = notebookState.execution.busy;
     return;
   }
 
-  editor.value = "";
-  editor.disabled = true;
+  setEditorValue(editor, "");
+  setEditorReadOnly(editor, true);
   saveButton.disabled = true;
   revertButton.disabled = true;
 }
@@ -2710,8 +2874,8 @@ function renderMainFileSurface() {
   if (!file) {
     meta.textContent = "Select a file from the workspace.";
     preview.replaceChildren();
-    editor.value = "";
-    editor.disabled = true;
+    setEditorValue(editor, "");
+    setEditorReadOnly(editor, true);
     saveButton.disabled = true;
     revertButton.disabled = true;
     return;
@@ -2721,15 +2885,16 @@ function renderMainFileSurface() {
   preview.replaceChildren(...buildWorkspaceFilePreviewNodes(file));
 
   if (isLikelyTextFile(file)) {
-    editor.value = notebookState.workspaceFileDraft;
-    editor.disabled = notebookState.execution.busy || notebookState.debug.active;
+    setEditorMode(editor, editorModeForPath(file.path || file.name));
+    setEditorValue(editor, notebookState.workspaceFileDraft);
+    setEditorReadOnly(editor, notebookState.execution.busy || notebookState.debug.active);
     saveButton.disabled = notebookState.execution.busy || notebookState.debug.active;
     revertButton.disabled = notebookState.execution.busy || notebookState.debug.active;
     return;
   }
 
-  editor.value = "";
-  editor.disabled = true;
+  setEditorValue(editor, "");
+  setEditorReadOnly(editor, true);
   saveButton.disabled = true;
   revertButton.disabled = true;
 }
@@ -3859,35 +4024,12 @@ function renderNotebook() {
       editor.disabled = controlsLocked;
       moveUpButton.addEventListener("click", () => moveCell(cell.id, -1));
       moveDownButton.addEventListener("click", () => moveCell(cell.id, 1));
-      editor.addEventListener("focus", () => {
+      const handleEditorFocus = () => {
         notebookState.focusedCellId = cell.id;
         syncExecutionUi();
-      });
-      editor.addEventListener("keydown", (event) => {
-        if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-          event.preventDefault();
-          if (event.shiftKey) {
-            void initializeAndRunCell(cell.id).then(() => {
-              const notebookAfterRun = activeNotebook();
-              const currentIndex = notebookAfterRun
-                ? notebookAfterRun.cells.findIndex((entry) => entry.id === cell.id)
-                : -1;
-              if (!notebookAfterRun || currentIndex < 0) {
-                return;
-              }
-              const nextCell = notebookAfterRun.cells[currentIndex + 1];
-              if (nextCell) {
-                notebookState.focusedCellId = nextCell.id;
-                focusCellEditor(nextCell.id);
-              }
-            });
-          } else {
-            void initializeAndRunCell(cell.id);
-          }
-        }
-      });
-      editor.addEventListener("input", (event) => {
-        cell.source = event.target.value;
+      };
+      const handleEditorInput = (value) => {
+        cell.source = value;
         if (cell.cellType === "markdown") {
           cell.rendered = false;
           cell.status = "Editing";
@@ -3895,7 +4037,59 @@ function renderNotebook() {
           markdownPreviewBlock.classList.add("is-hidden");
         }
         scheduleAutosave();
+      };
+      const runCellFromEditor = (advanceFocus) => {
+        if (advanceFocus) {
+          void initializeAndRunCell(cell.id).then(() => {
+            const notebookAfterRun = activeNotebook();
+            const currentIndex = notebookAfterRun
+              ? notebookAfterRun.cells.findIndex((entry) => entry.id === cell.id)
+              : -1;
+            if (!notebookAfterRun || currentIndex < 0) {
+              return;
+            }
+            const nextCell = notebookAfterRun.cells[currentIndex + 1];
+            if (nextCell) {
+              notebookState.focusedCellId = nextCell.id;
+              focusCellEditor(nextCell.id);
+            }
+          });
+          return;
+        }
+        void initializeAndRunCell(cell.id);
+      };
+
+      const codeMirror = createCodeMirrorEditor(editor, {
+        autoCloseBrackets: cell.cellType === "code",
+        matchBrackets: cell.cellType === "code",
+        mode: editorModeForCell(cell),
+        readOnly: controlsLocked,
       });
+
+      if (codeMirror) {
+        codeMirror.on("focus", handleEditorFocus);
+        codeMirror.on("change", (instance) => {
+          handleEditorInput(instance.getValue());
+        });
+        codeMirror.addKeyMap({
+          "Cmd-Enter": () => runCellFromEditor(false),
+          "Ctrl-Enter": () => runCellFromEditor(false),
+          "Shift-Cmd-Enter": () => runCellFromEditor(true),
+          "Shift-Ctrl-Enter": () => runCellFromEditor(true),
+        });
+        window.setTimeout(() => codeMirror.refresh(), 0);
+      } else {
+        editor.addEventListener("focus", handleEditorFocus);
+        editor.addEventListener("keydown", (event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+            event.preventDefault();
+            runCellFromEditor(Boolean(event.shiftKey));
+          }
+        });
+        editor.addEventListener("input", (event) => {
+          handleEditorInput(event.target.value);
+        });
+      }
 
       return fragment;
     }),
@@ -4901,24 +5095,8 @@ function wireEvents() {
   document
     .getElementById("workspace-file-input")
     .addEventListener("change", importWorkspaceFiles);
-  document
-    .getElementById("workspace-file-editor")
-    .addEventListener("input", (event) => {
-      notebookState.workspaceFileDraft = event.target.value;
-      const mainEditor = document.getElementById("file-surface-editor");
-      if (mainEditor && mainEditor.value !== event.target.value) {
-        mainEditor.value = event.target.value;
-      }
-    });
-  document
-    .getElementById("file-surface-editor")
-    .addEventListener("input", (event) => {
-      notebookState.workspaceFileDraft = event.target.value;
-      const sidebarEditor = document.getElementById("workspace-file-editor");
-      if (sidebarEditor && sidebarEditor.value !== event.target.value) {
-        sidebarEditor.value = event.target.value;
-      }
-    });
+  bindWorkspaceFileEditor("workspace-file-editor");
+  bindWorkspaceFileEditor("file-surface-editor");
   document
     .getElementById("save-workspace-file")
     .addEventListener("click", () => {
@@ -5171,7 +5349,13 @@ function renameWorkspaceFile(fileId) {
     updateSaveState("Rename failed: a workspace file already uses that path.");
     return;
   }
+  const linkedNotebook = notebookForFileId(file.id);
   applyWorkspaceFilePath(file, nextPath);
+  if (linkedNotebook && normalizeWorkspacePath(file.path || file.name).toLowerCase().endsWith(".ipynb")) {
+    linkedNotebook.title = stripNotebookExtension(basename(nextPath));
+    linkedNotebook.updatedAt = file.updatedAt;
+    syncNotebookTitle();
+  }
   updateSaveState(`Renamed to ${nextPath}`);
   renderNotebook();
   scheduleAutosave();
