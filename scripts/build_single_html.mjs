@@ -14,8 +14,10 @@ const css = fs.readFileSync(path.join(srcDir, "styles.css"), "utf8");
 const appJs = fs.readFileSync(path.join(srcDir, "app.js"), "utf8");
 const runtime = loadEmbeddedRuntime(rootDir);
 const editorAssets = loadEmbeddedEditorAssets(rootDir);
+const logoDataUri = loadInlineLogo(rootDir);
 
 const html = template
+  .replaceAll("__INLINE_LOGO_DATA__", logoDataUri)
   .replace("__INLINE_EDITOR_CSS__", editorAssets.css)
   .replace("__INLINE_CSS__", css)
   .replace("__INLINE_RUNTIME_BOOTSTRAP__", runtime.bootstrap)
@@ -64,6 +66,15 @@ function loadEmbeddedRuntime(projectRoot) {
 
 function escapeInlineScript(text) {
   return text.replaceAll("</script", "<\\/script");
+}
+
+function loadInlineLogo(projectRoot) {
+  const logoPath = path.join(projectRoot, "py_whole_logo.png");
+  if (!fs.existsSync(logoPath)) {
+    return "";
+  }
+  const base64 = fs.readFileSync(logoPath).toString("base64");
+  return `data:image/png;base64,${base64}`;
 }
 
 function loadBundledPackages(projectRoot) {

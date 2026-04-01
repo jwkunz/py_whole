@@ -66,6 +66,22 @@ body {
   box-shadow: var(--shadow);
 }
 
+.app-logo {
+  display: block;
+  object-fit: contain;
+}
+
+.app-logo-splash {
+  width: min(220px, 48vw);
+  margin: 0 auto 1rem;
+  filter: drop-shadow(0 14px 26px rgba(0, 0, 0, 0.28));
+}
+
+.app-logo-sidebar {
+  width: 104px;
+  margin: 0 0 0.9rem;
+}
+
 .app-splash-eyebrow {
   margin: 0 0 0.6rem;
   color: var(--muted);
