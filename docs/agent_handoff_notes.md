@@ -55,6 +55,7 @@
 
 - `docs/requirements.md` should remain the broad product target.
 - `docs/roadmap.md` should describe actual implementation status plus the next iteration plan.
+- `docs/phase10_checklist.md` should be the concrete manual verification script for the current iteration.
 - This handoff doc should stay focused on architecture, current constraints, and the immediate verification backlog.
 
 ## Phase 10 Focus

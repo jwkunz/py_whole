@@ -77,6 +77,7 @@ Objective: turn the current feature-rich prototype into a more reliable and inte
 - Quick-open and command-palette actions
 - Notebook import/export
 - Workspace file import/export/editing
+- Execute the manual pass captured in `docs/phase10_checklist.md`
 
 ### 2. Runtime and Plotting Validation
 
@@ -98,6 +99,7 @@ Objective: turn the current feature-rich prototype into a more reliable and inte
 - Use the roadmap as the live implementation status and near-term plan
 - Keep handoff notes focused on architecture, constraints, and immediate validation work
 - Update README so it describes the current workbench instead of an initial scaffold
+- Keep `docs/phase10_checklist.md` as the working verification script for this iteration
 
 ## After Phase 10
 
