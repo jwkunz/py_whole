@@ -221,6 +221,10 @@ function focusEditor(textarea) {
   textarea?.focus();
 }
 
+function blurActiveCellEditor() {
+  document.activeElement?.blur?.();
+}
+
 function syncSyntaxHighlightScroll(textarea) {
   const highlighter = syntaxHighlightInstance(textarea);
   if (!highlighter) {
@@ -4195,9 +4199,26 @@ function renderNotebook() {
         });
         liveEditor.addEventListener("focus", handleEditorFocus);
         liveEditor.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            blurActiveCellEditor();
+            notebookState.focusedCellId = cell.id;
+            renderNotebook();
+            return;
+          }
+          if (event.shiftKey && event.key === "Enter") {
+            event.preventDefault();
+            runCellFromEditor(true);
+            return;
+          }
+          if (event.altKey && event.key === "Enter") {
+            event.preventDefault();
+            void runCellAndInsertBelow(cell.id);
+            return;
+          }
           if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
             event.preventDefault();
-            runCellFromEditor(Boolean(event.shiftKey));
+            runCellFromEditor(false);
           }
         });
         liveEditor.addEventListener("input", (event) => {
@@ -4571,6 +4592,167 @@ function selectedCodeCell(notebook = activeNotebook()) {
     return focused;
   }
   return notebook.cells.find((cell) => cell.cellType === "code") || null;
+}
+
+function selectedNotebookCell(notebook = activeNotebook()) {
+  if (!notebook) {
+    return null;
+  }
+  const focused = notebook.cells.find((cell) => cell.id === notebookState.focusedCellId);
+  if (focused) {
+    return focused;
+  }
+  return notebook.cells[0] || null;
+}
+
+function selectNotebookCellByOffset(offset) {
+  const notebook = activeNotebook();
+  const selected = selectedNotebookCell(notebook);
+  if (!notebook || !selected) {
+    return;
+  }
+  const index = notebook.cells.findIndex((cell) => cell.id === selected.id);
+  const nextCell = notebook.cells[index + offset];
+  if (!nextCell) {
+    return;
+  }
+  notebookState.focusedCellId = nextCell.id;
+  renderNotebook();
+}
+
+function insertCellAbove(cellId) {
+  const notebook = activeNotebook();
+  if (!notebook || notebookState.execution.busy) {
+    return;
+  }
+  const index = notebook.cells.findIndex((cell) => cell.id === cellId);
+  if (index < 0) {
+    return;
+  }
+
+  const sourceCell = notebook.cells[index];
+  const newCell =
+    sourceCell.cellType === "markdown"
+      ? createMarkdownCell("")
+      : createCodeCell("");
+
+  notebook.cells.splice(index, 0, newCell);
+  notebook.updatedAt = new Date().toISOString();
+  notebookState.focusedCellId = newCell.id;
+  renderNotebook();
+  focusCellEditor(newCell.id);
+  scheduleAutosave();
+}
+
+async function runCellAndInsertBelow(cellId) {
+  const notebook = activeNotebook();
+  const cell = notebook?.cells.find((entry) => entry.id === cellId);
+  if (!notebook || !cell) {
+    return;
+  }
+
+  await initializeAndRunCell(cellId);
+  const currentIndex = notebook.cells.findIndex((entry) => entry.id === cellId);
+  if (currentIndex < 0) {
+    return;
+  }
+  const currentCell = notebook.cells[currentIndex];
+  const newCell = currentCell.cellType === "markdown"
+    ? createMarkdownCell("")
+    : createCodeCell("");
+  notebook.cells.splice(currentIndex + 1, 0, newCell);
+  notebook.updatedAt = new Date().toISOString();
+  notebookState.focusedCellId = newCell.id;
+  renderNotebook();
+  focusCellEditor(newCell.id);
+  scheduleAutosave();
+}
+
+function toggleSelectedCellType(cellType) {
+  const notebook = activeNotebook();
+  const cell = selectedNotebookCell(notebook);
+  if (!notebook || !cell || notebookState.execution.busy || notebookState.debug.active) {
+    return;
+  }
+  if (cell.cellType === cellType) {
+    return;
+  }
+  toggleCellType(cell.id);
+}
+
+function handleNotebookCommandShortcut(event) {
+  const active = activeDocument();
+  const target = event.target;
+  const isEditableTarget = target instanceof HTMLTextAreaElement
+    || target instanceof HTMLInputElement
+    || target?.isContentEditable;
+  if (active?.type !== "notebook" || isEditableTarget || event.metaKey || event.ctrlKey || event.altKey) {
+    return false;
+  }
+  if (document.querySelector(".menu-group[open]")) {
+    return false;
+  }
+
+  const selected = selectedNotebookCell();
+  if (!selected) {
+    return false;
+  }
+
+  const key = event.key.toLowerCase();
+  const pendingDelete = document.body.dataset.pendingNotebookDelete === "true";
+
+  if (key !== "d") {
+    document.body.dataset.pendingNotebookDelete = "false";
+  }
+
+  switch (key) {
+    case "enter":
+      event.preventDefault();
+      focusCellEditor(selected.id);
+      return true;
+    case "a":
+      event.preventDefault();
+      insertCellAbove(selected.id);
+      return true;
+    case "b":
+      event.preventDefault();
+      insertCellBelow(selected.id);
+      return true;
+    case "j":
+    case "arrowdown":
+      event.preventDefault();
+      selectNotebookCellByOffset(1);
+      return true;
+    case "k":
+    case "arrowup":
+      event.preventDefault();
+      selectNotebookCellByOffset(-1);
+      return true;
+    case "m":
+      event.preventDefault();
+      toggleSelectedCellType("markdown");
+      return true;
+    case "y":
+      event.preventDefault();
+      toggleSelectedCellType("code");
+      return true;
+    case "d":
+      event.preventDefault();
+      if (pendingDelete) {
+        deleteCell(selected.id);
+        document.body.dataset.pendingNotebookDelete = "false";
+      } else {
+        document.body.dataset.pendingNotebookDelete = "true";
+        window.setTimeout(() => {
+          if (document.body.dataset.pendingNotebookDelete === "true") {
+            document.body.dataset.pendingNotebookDelete = "false";
+          }
+        }, 900);
+      }
+      return true;
+    default:
+      return false;
+  }
 }
 
 function renderDebugViewer() {
@@ -5145,6 +5327,9 @@ function wireEvents() {
     });
   document.addEventListener("keydown", (event) => {
     if (handleGlobalDebugShortcut(event)) {
+      return;
+    }
+    if (handleNotebookCommandShortcut(event)) {
       return;
     }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
