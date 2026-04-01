@@ -16,119 +16,12 @@ __INLINE_CSS__
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand-block brand-block-sidebar">
-          <p class="eyebrow">Offline Notebook</p>
+          <p class="eyebrow">Notebook Browser</p>
           <h1>py_whole</h1>
           <p class="brand-copy">
-            Single-file browser notebook for scientific computing.
+            Documents and files for the current local workspace.
           </p>
         </div>
-
-        <section class="panel">
-          <h2>Notebook Menu</h2>
-          <nav class="menu-bar menu-bar-sidebar" aria-label="Notebook menu">
-            <details class="menu-group">
-              <summary>File</summary>
-              <div class="menu-panel">
-                <button id="open-launcher" class="menu-action secondary" type="button">Launcher</button>
-                <button id="new-notebook-sidebar" class="menu-action secondary" type="button">New Notebook</button>
-                <button id="import-notebook" class="menu-action secondary" type="button">Import Notebook</button>
-                <button id="export-notebook" class="menu-action secondary" type="button">Export Notebook</button>
-                <button id="import-file" class="menu-action secondary" type="button">Import Files</button>
-                <button id="new-file" class="menu-action secondary" type="button">New File</button>
-                <button id="new-folder" class="menu-action secondary" type="button">New Folder</button>
-                <button id="rename-notebook" class="menu-action secondary" type="button">Rename Notebook</button>
-                <button id="duplicate-notebook" class="menu-action secondary" type="button">Duplicate Notebook</button>
-                <button id="delete-notebook" class="menu-action danger" type="button">Delete Notebook</button>
-              </div>
-            </details>
-            <details class="menu-group">
-              <summary>Edit</summary>
-              <div class="menu-panel">
-                <button id="add-code-cell" class="menu-action secondary" type="button">Add Code Cell</button>
-                <button id="add-markdown-cell" class="menu-action secondary" type="button">Add Markdown Cell</button>
-                <button id="clear-all-outputs" class="menu-action secondary" type="button">Clear Outputs</button>
-                <button id="clear-recovery" class="menu-action secondary" type="button">Clear Recovery</button>
-                <button class="menu-action secondary" type="button" data-command="copy-package-import">Copy Package Import</button>
-                <button class="menu-action secondary" type="button" data-command="insert-package-demo">Insert Package Demo</button>
-                <button class="menu-action secondary" type="button" data-command="run-package-demo">Run Package Demo</button>
-                <button class="menu-action secondary" type="button" data-command="insert-runtime-report">Insert Runtime Report</button>
-              </div>
-            </details>
-            <details class="menu-group">
-              <summary>Kernel</summary>
-              <div class="menu-panel">
-                <button id="initialize-runtime" class="menu-action secondary" type="button">Initialize Runtime</button>
-                <button id="restart-runtime" class="menu-action secondary" type="button">Restart Runtime</button>
-                <button id="interrupt-runtime" class="menu-action secondary" type="button">Interrupt Runtime</button>
-                <button id="run-all" class="menu-action secondary" type="button">Run All Cells</button>
-                <button id="interrupt-run" class="menu-action secondary" type="button">Interrupt Run</button>
-                <button id="start-debug" class="menu-action secondary" type="button">Debug</button>
-                <button id="continue-debug" class="menu-action secondary" type="button">Continue</button>
-                <button id="step-debug" class="menu-action secondary" type="button">Step</button>
-                <button id="stop-debug" class="menu-action secondary" type="button">Stop</button>
-              </div>
-            </details>
-            <details class="menu-group">
-              <summary>Preferences</summary>
-              <div class="menu-panel">
-                <button class="menu-action secondary panel-toggle" data-panel-target="variable-viewer" type="button">Toggle Variables</button>
-                <button class="menu-action secondary panel-toggle" data-panel-target="variable-detail-viewer" type="button">Toggle Inspector</button>
-                <button class="menu-action secondary panel-toggle" data-panel-target="watch-viewer" type="button">Toggle Watch</button>
-                <button class="menu-action secondary panel-toggle" data-panel-target="debug-viewer" type="button">Toggle Debug</button>
-                <button class="menu-action secondary panel-toggle" data-panel-target="terminal-output" type="button">Toggle Terminal</button>
-                <button id="add-watch" class="menu-action secondary" type="button">Add Watch</button>
-                <button class="menu-action secondary" type="button" data-command="launcher-open-terminal">Open Console</button>
-              </div>
-            </details>
-            <details class="menu-group">
-              <summary>Help</summary>
-              <div class="menu-panel">
-                <button class="menu-action secondary" type="button" data-command="run-runtime-diagnostics">Run Runtime Check</button>
-                <button class="menu-action secondary" type="button" data-command="copy-runtime-diagnostics">Copy Runtime Report</button>
-                <button class="menu-action secondary" type="button" data-command="launcher-run-runtime-check">Runtime Check View</button>
-                <button class="menu-action secondary" type="button" data-command="launcher-insert-runtime-report">Insert Runtime Report</button>
-                <button class="menu-action secondary" type="button" data-command="launcher-copy-runtime-report">Copy Runtime Report</button>
-              </div>
-            </details>
-          </nav>
-        </section>
-
-        <section class="panel">
-          <h2>Quick Actions</h2>
-          <div class="quick-action-grid">
-            <button id="toolbar-initialize-runtime" class="secondary" type="button" data-command="initialize-runtime">Initialize</button>
-            <button id="toolbar-add-code-cell" type="button" data-command="add-code-cell">Code Cell</button>
-            <button id="toolbar-add-markdown-cell" class="secondary" type="button" data-command="add-markdown-cell">Markdown Cell</button>
-            <button id="toolbar-run-all" class="secondary" type="button" data-command="run-all">Run All</button>
-            <button id="toolbar-interrupt-run" class="secondary" type="button" data-command="interrupt-run">Interrupt</button>
-          </div>
-        </section>
-
-        <section class="panel">
-          <h2>Session</h2>
-          <dl class="status-list">
-            <div>
-              <dt>Kernel</dt>
-              <dd id="kernel-state">Uninitialized</dd>
-            </div>
-            <div>
-              <dt>Execution</dt>
-              <dd id="execution-state">Idle</dd>
-            </div>
-            <div>
-              <dt>Interrupt</dt>
-              <dd id="interrupt-state">Not requested</dd>
-            </div>
-            <div>
-              <dt>Mode</dt>
-              <dd>Single notebook</dd>
-            </div>
-            <div>
-              <dt>Artifact</dt>
-              <dd>Single HTML</dd>
-            </div>
-          </dl>
-        </section>
 
         <section class="panel">
           <h2>Workspace</h2>
@@ -176,41 +69,43 @@ __INLINE_CSS__
           </div>
         </details>
 
-        <details class="panel panel-collapsible">
-          <summary class="panel-summary">Packages</summary>
-          <p class="panel-copy">
-            Target scientific stack for the embedded runtime:
-          </p>
-          <ul class="tag-list" id="package-list"></ul>
-          <div id="package-detail" class="package-detail"></div>
-          <div class="button-row">
-            <button id="copy-package-import" class="secondary">Copy Import Snippet</button>
-            <button id="insert-package-demo" class="secondary">Insert Demo</button>
-            <button id="run-package-demo" class="secondary">Run Demo</button>
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Packages</h2>
+            <button class="panel-toggle secondary" data-panel-target="package-panel" type="button">Hide</button>
           </div>
-        </details>
-
-        <details class="panel panel-collapsible">
-          <summary class="panel-summary">Runtime Check</summary>
-          <p class="panel-copy">
-            Verify the embedded scientific stack and matplotlib backend on this device.
-          </p>
-          <div class="button-row">
-            <button id="run-runtime-diagnostics" class="secondary">Run Runtime Check</button>
-            <button id="copy-runtime-diagnostics" class="secondary">Copy Report</button>
-            <button id="insert-runtime-report" class="secondary">Insert Report</button>
+          <div id="package-panel">
+            <p class="panel-copy">
+              Target scientific stack for the embedded runtime:
+            </p>
+            <ul class="tag-list" id="package-list"></ul>
+            <div id="package-detail" class="package-detail"></div>
+            <div class="button-row">
+              <button id="copy-package-import" class="secondary">Copy Import Snippet</button>
+              <button id="insert-package-demo" class="secondary">Insert Demo</button>
+              <button id="run-package-demo" class="secondary">Run Demo</button>
+            </div>
           </div>
-          <div id="runtime-diagnostics" class="runtime-diagnostics"></div>
-        </details>
+        </section>
 
-        <details class="panel panel-collapsible">
-          <summary class="panel-summary">Help</summary>
-          <p class="panel-copy">
-            Runtime execution is fully local. Interrupt requests stop
-            queued execution after the current cell finishes because the
-            embedded Pyodide runtime is executing in-page.
-          </p>
-        </details>
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Runtime</h2>
+            <button class="panel-toggle secondary" data-panel-target="runtime-support-panel" type="button">Hide</button>
+          </div>
+          <div id="runtime-support-panel">
+            <p class="panel-copy">
+              Verify the embedded scientific stack and matplotlib backend on this device.
+            </p>
+            <div class="button-row">
+              <button id="run-runtime-diagnostics" class="secondary">Run Runtime Check</button>
+              <button id="copy-runtime-diagnostics" class="secondary">Copy Report</button>
+              <button id="insert-runtime-report" class="secondary">Insert Report</button>
+            </div>
+            <div id="runtime-diagnostics" class="runtime-diagnostics"></div>
+          </div>
+        </section>
+
       </aside>
 
       <main class="workspace-shell">
@@ -219,6 +114,66 @@ __INLINE_CSS__
             <section id="document-tabs" class="document-tabs"></section>
 
             <header class="workspace-header">
+              <nav class="notebook-menubar" aria-label="Notebook menubar">
+                <details class="menu-group">
+                  <summary>File</summary>
+                  <div class="menu-panel">
+                    <button id="menu-open-launcher" class="menu-action secondary" type="button">Launcher</button>
+                    <button id="menu-new-notebook" class="menu-action secondary" type="button">New Notebook</button>
+                    <button id="menu-import-notebook" class="menu-action secondary" type="button">Import Notebook</button>
+                    <button id="menu-export-notebook" class="menu-action secondary" type="button">Export Notebook</button>
+                    <button id="menu-import-file" class="menu-action secondary" type="button">Import Files</button>
+                    <button id="menu-new-file" class="menu-action secondary" type="button">New File</button>
+                    <button id="menu-new-folder" class="menu-action secondary" type="button">New Folder</button>
+                  </div>
+                </details>
+                <details class="menu-group">
+                  <summary>Edit</summary>
+                  <div class="menu-panel">
+                    <button id="toolbar-add-code-cell" class="menu-action secondary" type="button">Add Code Cell</button>
+                    <button id="toolbar-add-markdown-cell" class="menu-action secondary" type="button">Add Markdown Cell</button>
+                    <button id="toolbar-clear-outputs" class="menu-action secondary" type="button">Clear Outputs</button>
+                    <button id="menu-clear-recovery" class="menu-action secondary" type="button">Clear Recovery</button>
+                  </div>
+                </details>
+                <details class="menu-group">
+                  <summary>Cell</summary>
+                  <div class="menu-panel">
+                    <button id="toolbar-run-active-cell" class="menu-action secondary" type="button">Run Cell</button>
+                    <button id="toolbar-run-above-cell" class="menu-action secondary" type="button">Run Above</button>
+                    <button id="toolbar-run-below-cell" class="menu-action secondary" type="button">Run Below</button>
+                    <button id="toolbar-run-all" class="menu-action secondary" type="button">Run All Cells</button>
+                    <button id="menu-clear-outputs-cell" class="menu-action secondary" type="button">Clear Outputs</button>
+                  </div>
+                </details>
+                <details class="menu-group">
+                  <summary>Kernel</summary>
+                  <div class="menu-panel">
+                    <button id="toolbar-initialize-runtime" class="menu-action secondary" type="button">Initialize Runtime</button>
+                    <button id="menu-restart-runtime" class="menu-action secondary" type="button">Restart Runtime</button>
+                    <button id="menu-interrupt-runtime" class="menu-action secondary" type="button">Interrupt Runtime</button>
+                    <button id="toolbar-interrupt-run" class="menu-action secondary" type="button">Interrupt Run</button>
+                  </div>
+                </details>
+                <details class="menu-group">
+                  <summary>View</summary>
+                  <div class="menu-panel">
+                    <button class="menu-action secondary panel-toggle" data-panel-target="variable-viewer" type="button">Toggle Variables</button>
+                    <button class="menu-action secondary panel-toggle" data-panel-target="variable-detail-viewer" type="button">Toggle Inspector</button>
+                    <button class="menu-action secondary panel-toggle" data-panel-target="watch-viewer" type="button">Toggle Watch</button>
+                    <button class="menu-action secondary panel-toggle" data-panel-target="debug-viewer" type="button">Toggle Debug</button>
+                    <button class="menu-action secondary panel-toggle" data-panel-target="terminal-output" type="button">Toggle Terminal</button>
+                  </div>
+                </details>
+                <details class="menu-group">
+                  <summary>Help</summary>
+                  <div class="menu-panel">
+                    <button id="menu-run-runtime-diagnostics" class="menu-action secondary" type="button">Run Runtime Check</button>
+                    <button id="menu-copy-runtime-diagnostics" class="menu-action secondary" type="button">Copy Runtime Report</button>
+                    <button id="menu-insert-runtime-report" class="menu-action secondary" type="button">Insert Runtime Report</button>
+                  </div>
+                </details>
+              </nav>
               <div class="workspace-header-copy">
                 <p class="eyebrow" id="workspace-eyebrow">Notebook</p>
                 <label class="title-label">
@@ -234,15 +189,16 @@ __INLINE_CSS__
                 <p class="workspace-subtitle">
                   Use `Shift+Enter` to run the active cell. The first run initializes Python automatically if needed.
                 </p>
+                <div class="workspace-status-strip" aria-label="Notebook status">
+                  <span>Kernel: <strong id="kernel-state">Uninitialized</strong></span>
+                  <span>Execution: <strong id="execution-state">Idle</strong></span>
+                  <span>Interrupt: <strong id="interrupt-state">Not requested</strong></span>
+                  <span>Save: <strong id="save-state">Unsaved</strong></span>
+                </div>
               </div>
               <div class="active-cell-toolbar">
                 <div id="active-cell-indicator" class="active-cell-indicator">Active cell: none</div>
-                <div class="button-row active-cell-actions">
-                  <button id="run-active-cell" type="button">Run Cell</button>
-                  <button id="run-above-cell" class="secondary" type="button">Run Above</button>
-                  <button id="run-below-cell" class="secondary" type="button">Run Below</button>
-                  <button id="run-all-cells-toolbar" class="secondary" type="button">Run All</button>
-                </div>
+                <div class="active-cell-meta">Use the top ribbon menus for cell and kernel actions.</div>
               </div>
             </header>
 
@@ -303,13 +259,44 @@ __INLINE_CSS__
                 </div>
               </div>
             </section>
+
+            <section class="workspace-utility-panels">
+              <section class="panel workspace-utility-panel">
+                <div class="panel-header">
+                  <h2>Debug</h2>
+                  <button class="panel-toggle secondary" data-panel-target="debug-viewer" type="button">Hide</button>
+                </div>
+                <div id="debug-viewer" class="debug-viewer"></div>
+              </section>
+
+              <section class="panel workspace-utility-panel">
+                <div class="panel-header">
+                  <h2>Terminal</h2>
+                  <button class="panel-toggle secondary" data-panel-target="terminal-output" type="button">Hide</button>
+                </div>
+                <div id="terminal-output" class="terminal-output"></div>
+                <label class="editor-label">
+                  <span>Python Console</span>
+                  <textarea
+                    id="terminal-input"
+                    class="cell-editor terminal-input"
+                    spellcheck="false"
+                    aria-label="Terminal input"
+                  ></textarea>
+                </label>
+                <div class="button-row">
+                  <button id="run-terminal-command">Run Command</button>
+                  <button id="clear-terminal-output" class="secondary">Clear</button>
+                </div>
+              </section>
+            </section>
           </div>
         </section>
 
         <aside class="inspector-rail">
           <section class="panel">
             <div class="panel-header">
-              <h2>Notebook</h2>
+              <h2>Session</h2>
               <button class="panel-toggle secondary" data-panel-target="notebook-status-panel" type="button">Hide</button>
             </div>
             <div id="notebook-status-panel" class="notebook-status-panel">
@@ -346,7 +333,7 @@ __INLINE_CSS__
 
           <section class="panel">
             <div class="panel-header">
-              <h2>Inspector</h2>
+              <h2>Properties</h2>
               <button class="panel-toggle secondary" data-panel-target="variable-detail-viewer" type="button">Hide</button>
             </div>
             <div id="variable-detail-viewer" class="variable-detail-viewer"></div>
@@ -365,30 +352,15 @@ __INLINE_CSS__
 
           <section class="panel">
             <div class="panel-header">
-              <h2>Debug</h2>
-              <button class="panel-toggle secondary" data-panel-target="debug-viewer" type="button">Hide</button>
+              <h2>Help</h2>
+              <button class="panel-toggle secondary" data-panel-target="help-support-panel" type="button">Hide</button>
             </div>
-            <div id="debug-viewer" class="debug-viewer"></div>
-          </section>
-
-          <section class="panel">
-            <div class="panel-header">
-              <h2>Terminal</h2>
-              <button class="panel-toggle secondary" data-panel-target="terminal-output" type="button">Hide</button>
-            </div>
-            <div id="terminal-output" class="terminal-output"></div>
-            <label class="editor-label">
-              <span>Python Console</span>
-              <textarea
-                id="terminal-input"
-                class="cell-editor terminal-input"
-                spellcheck="false"
-                aria-label="Terminal input"
-              ></textarea>
-            </label>
-            <div class="button-row">
-              <button id="run-terminal-command">Run Command</button>
-              <button id="clear-terminal-output" class="secondary">Clear</button>
+            <div id="help-support-panel">
+              <p class="panel-copy">
+                Runtime execution is fully local. Interrupt requests stop
+                queued execution after the current cell finishes because the
+                embedded Pyodide runtime is executing in-page.
+              </p>
             </div>
           </section>
         </aside>
@@ -400,30 +372,32 @@ __INLINE_CSS__
         <div class="cell-shell">
           <aside class="cell-gutter">
             <div class="cell-prompt">[ ]</div>
-            <div class="cell-label-wrap">
-              <span class="cell-kind">Code</span>
-              <span class="cell-status">Idle</span>
-            </div>
-            <div class="cell-actions">
-              <button class="run-cell cell-run-button" type="button" aria-label="Run cell">Run</button>
-              <details class="cell-menu">
-                <summary class="cell-menu-toggle" aria-label="Cell actions">...</summary>
-                <div class="cell-menu-panel">
-                  <button class="debug-cell secondary" type="button">Debug</button>
-                  <button class="run-to-cell secondary" type="button">Run To Here</button>
-                  <button class="insert-below secondary" type="button">Insert Below</button>
-                  <button class="duplicate-cell secondary" type="button">Duplicate</button>
-                  <button class="toggle-kind secondary" type="button">Toggle Type</button>
-                  <button class="toggle-breakpoint secondary" type="button">Breakpoint</button>
-                  <button class="move-up secondary" type="button">Move Up</button>
-                  <button class="move-down secondary" type="button">Move Down</button>
-                  <button class="clear-output secondary" type="button">Clear Output</button>
-                  <button class="delete-cell danger" type="button">Delete</button>
-                </div>
-              </details>
-            </div>
           </aside>
           <div class="cell-main">
+            <div class="cell-chrome">
+              <div class="cell-label-wrap">
+                <span class="cell-kind">Code</span>
+                <span class="cell-status">Idle</span>
+              </div>
+              <div class="cell-actions">
+                <button class="run-cell cell-run-button" type="button" aria-label="Run cell">Run</button>
+                <details class="cell-menu">
+                  <summary class="cell-menu-toggle" aria-label="Cell actions">...</summary>
+                  <div class="cell-menu-panel">
+                    <button class="debug-cell secondary" type="button">Debug</button>
+                    <button class="run-to-cell secondary" type="button">Run To Here</button>
+                    <button class="insert-below secondary" type="button">Insert Below</button>
+                    <button class="duplicate-cell secondary" type="button">Duplicate</button>
+                    <button class="toggle-kind secondary" type="button">Toggle Type</button>
+                    <button class="toggle-breakpoint secondary" type="button">Breakpoint</button>
+                    <button class="move-up secondary" type="button">Move Up</button>
+                    <button class="move-down secondary" type="button">Move Down</button>
+                    <button class="clear-output secondary" type="button">Clear Output</button>
+                    <button class="delete-cell danger" type="button">Delete</button>
+                  </div>
+                </details>
+              </div>
+            </div>
             <label class="editor-label">
               <span class="editor-mode-label">Python</span>
               <textarea

@@ -955,12 +955,18 @@ function ensureParentDirectories(fsApi, absolutePath) {
 }
 
 function updateKernelState(text) {
-  document.getElementById("kernel-state").textContent = text;
+  const node = document.getElementById("kernel-state");
+  if (node) {
+    node.textContent = text;
+  }
 }
 
 function updateSaveState(text) {
   notebookState.saveState = text;
-  document.getElementById("save-state").textContent = text;
+  const node = document.getElementById("save-state");
+  if (node) {
+    node.textContent = text;
+  }
 }
 
 function executionStatusText() {
@@ -995,20 +1001,25 @@ function syncExecutionUi() {
   const executionText = executionStatusText();
   const canInterrupt = busy && !interruptRequested;
 
-  document.getElementById("execution-state").textContent = executionText;
-  document.getElementById("interrupt-state").textContent = interruptStatusText();
-  document.getElementById("run-state").textContent = executionText;
+  const executionStateNode = document.getElementById("execution-state");
+  if (executionStateNode) {
+    executionStateNode.textContent = executionText;
+  }
+  const interruptStateNode = document.getElementById("interrupt-state");
+  if (interruptStateNode) {
+    interruptStateNode.textContent = interruptStatusText();
+  }
+  const runStateNode = document.getElementById("run-state");
+  if (runStateNode) {
+    runStateNode.textContent = executionText;
+  }
 
   document.querySelector(".app-shell")?.classList.toggle("is-busy", busy);
 
   const interruptButtons = [
-    document.getElementById("interrupt-runtime"),
-    document.getElementById("interrupt-run"),
+    document.getElementById("menu-interrupt-runtime"),
+    document.getElementById("toolbar-interrupt-run"),
   ];
-  const debugStartButton = document.getElementById("start-debug");
-  const debugContinueButton = document.getElementById("continue-debug");
-  const debugStepButton = document.getElementById("step-debug");
-  const debugStopButton = document.getElementById("stop-debug");
 
   for (const button of interruptButtons) {
     if (button) {
@@ -1017,17 +1028,23 @@ function syncExecutionUi() {
   }
 
   for (const control of [
-    document.getElementById("run-all"),
-    document.getElementById("add-code-cell"),
-    document.getElementById("add-markdown-cell"),
-    document.getElementById("new-notebook-sidebar"),
-    document.getElementById("delete-notebook"),
-    document.getElementById("import-notebook"),
-    document.getElementById("export-notebook"),
-    document.getElementById("clear-all-outputs"),
-    document.getElementById("import-file"),
-    document.getElementById("new-folder"),
-    document.getElementById("clear-recovery"),
+    document.getElementById("toolbar-add-code-cell"),
+    document.getElementById("toolbar-add-markdown-cell"),
+    document.getElementById("toolbar-run-active-cell"),
+    document.getElementById("toolbar-run-all"),
+    document.getElementById("toolbar-clear-outputs"),
+    document.getElementById("menu-open-launcher"),
+    document.getElementById("menu-new-notebook"),
+    document.getElementById("menu-import-notebook"),
+    document.getElementById("menu-export-notebook"),
+    document.getElementById("menu-import-file"),
+    document.getElementById("menu-new-file"),
+    document.getElementById("menu-new-folder"),
+    document.getElementById("menu-clear-recovery"),
+    document.getElementById("menu-clear-outputs-cell"),
+    document.getElementById("menu-run-runtime-diagnostics"),
+    document.getElementById("menu-copy-runtime-diagnostics"),
+    document.getElementById("menu-insert-runtime-report"),
     document.getElementById("add-watch"),
     document.getElementById("run-runtime-diagnostics"),
     document.getElementById("notebook-title-input"),
@@ -1039,21 +1056,9 @@ function syncExecutionUi() {
     }
   }
 
-  const initButton = document.getElementById("initialize-runtime");
-  if (initButton) {
-    initButton.disabled = locked || notebookState.runtimeReady;
-  }
-  if (debugStartButton) {
-    debugStartButton.disabled = busy || notebookState.debug.active;
-  }
-  if (debugContinueButton) {
-    debugContinueButton.disabled = busy || !notebookState.debug.active || !notebookState.debug.pausedCellId;
-  }
-  if (debugStepButton) {
-    debugStepButton.disabled = busy || !notebookState.debug.active || !notebookState.debug.pausedCellId;
-  }
-  if (debugStopButton) {
-    debugStopButton.disabled = busy || !notebookState.debug.active;
+  const toolbarInitButton = document.getElementById("toolbar-initialize-runtime");
+  if (toolbarInitButton) {
+    toolbarInitButton.disabled = locked || notebookState.runtimeReady;
   }
 
   document.querySelectorAll(".workspace-item").forEach((item) => {
@@ -3434,7 +3439,10 @@ function renderNotebook() {
       editorModeLabel.textContent = cell.cellType === "markdown" ? "Markdown" : "Python";
       editor.value = cell.source;
       markdownPreviewBlock.classList.toggle("is-hidden", cell.cellType !== "markdown");
-      outputBlock.classList.toggle("is-hidden", cell.cellType === "markdown");
+      outputBlock.classList.toggle(
+        "is-hidden",
+        cell.cellType === "markdown" || !Array.isArray(cell.outputs) || cell.outputs.length === 0,
+      );
       if (cell.cellType === "markdown") {
         renderMarkdownPreview(markdownPreview, cell.source);
       }
@@ -3868,33 +3876,13 @@ function selectedCodeCell(notebook = activeNotebook()) {
 
 function updateActiveCellToolbar() {
   const indicator = document.getElementById("active-cell-indicator");
-  const runActiveButton = document.getElementById("run-active-cell");
-  const runAboveButton = document.getElementById("run-above-cell");
-  const runBelowButton = document.getElementById("run-below-cell");
-  const runAllButton = document.getElementById("run-all-cells-toolbar");
   const notebook = activeNotebook();
   const selected = selectedCodeCell(notebook);
-  const busy = notebookState.execution.busy;
-  const debugActive = notebookState.debug.active;
 
   if (indicator) {
     indicator.textContent = selected
       ? `Active cell: ${selected.id} (${selected.status || "Idle"})`
       : "Active cell: none";
-  }
-
-  const disableRunScopes = !selected || busy || debugActive;
-  if (runActiveButton) {
-    runActiveButton.disabled = disableRunScopes;
-  }
-  if (runAboveButton) {
-    runAboveButton.disabled = disableRunScopes;
-  }
-  if (runBelowButton) {
-    runBelowButton.disabled = disableRunScopes;
-  }
-  if (runAllButton) {
-    runAllButton.disabled = !notebook || busy || debugActive;
   }
 }
 
@@ -4276,92 +4264,101 @@ function handleGlobalDebugShortcut(event) {
   return false;
 }
 
-function wireCommandMirrors() {
-  document.querySelectorAll("[data-command]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const commandId = button.dataset.command;
-      const target = commandId ? document.getElementById(commandId) : null;
-      if (!target || target === button) {
-        return;
-      }
-      target.click();
-      button.closest("details")?.removeAttribute("open");
-    });
-  });
-}
-
 function wireEvents() {
-  document
-    .getElementById("initialize-runtime")
-    .addEventListener("click", async () => {
-      try {
-        await runtimeAdapter.initialize();
-      } catch (error) {
-        updateKernelState(String(error.message || error));
-      }
-    });
-  document
-    .getElementById("restart-runtime")
-    .addEventListener("click", () => runtimeAdapter.restart());
-  document
-    .getElementById("interrupt-runtime")
-    .addEventListener("click", requestInterrupt);
-  document
-    .getElementById("interrupt-run")
-    .addEventListener("click", requestInterrupt);
-  document
-    .getElementById("add-code-cell")
-    .addEventListener("click", addCodeCell);
-  document
-    .getElementById("add-markdown-cell")
-    .addEventListener("click", addMarkdownCell);
-  document
-    .getElementById("open-launcher")
-    .addEventListener("click", () => setActiveDocument("launcher", "launcher"));
+  const bindClick = (id, handler) => {
+    const node = document.getElementById(id);
+    if (node) {
+      node.addEventListener("click", handler);
+    }
+  };
+
+  const initializeRuntime = async () => {
+    try {
+      await runtimeAdapter.initialize();
+    } catch (error) {
+      updateKernelState(String(error.message || error));
+    }
+  };
+
+  const openLauncher = () => {
+    setActiveDocument("launcher", "launcher");
+  };
+
+  const openNotebookImportPicker = () => {
+    document.getElementById("ipynb-file-input").click();
+  };
+
+  const openWorkspaceFilePicker = () => {
+    document.getElementById("workspace-file-input").click();
+  };
+
+  const insertRuntimeReportFromMenu = () => {
+    const cell = insertRuntimeReportCell();
+    if (cell) {
+      notebookState.focusedCellId = cell.id;
+      focusCellEditor(cell.id);
+      updateSaveState("Inserted runtime report");
+    }
+  };
+
+  const copyRuntimeReportToClipboard = () => {
+    void copyTextToClipboard(formatRuntimeDiagnosticsReport());
+  };
+
+  bindClick("toolbar-initialize-runtime", () => {
+    void initializeRuntime();
+  });
+  bindClick("menu-restart-runtime", () => runtimeAdapter.restart());
+  bindClick("menu-interrupt-runtime", requestInterrupt);
+  bindClick("toolbar-interrupt-run", requestInterrupt);
+  bindClick("toolbar-add-code-cell", addCodeCell);
+  bindClick("toolbar-add-markdown-cell", addMarkdownCell);
+  bindClick("toolbar-clear-outputs", clearAllOutputs);
+  bindClick("menu-open-launcher", openLauncher);
+  bindClick("menu-new-notebook", createNewNotebook);
+  bindClick("menu-import-notebook", openNotebookImportPicker);
+  bindClick("menu-export-notebook", exportNotebook);
+  bindClick("menu-import-file", openWorkspaceFilePicker);
+  bindClick("menu-new-file", createWorkspaceTextFile);
+  bindClick("menu-new-folder", createWorkspaceFolder);
+  bindClick("menu-clear-recovery", clearRecovery);
+  bindClick("menu-run-runtime-diagnostics", () => {
+    void runRuntimeDiagnostics();
+  });
+  bindClick("menu-copy-runtime-diagnostics", copyRuntimeReportToClipboard);
+  bindClick("menu-insert-runtime-report", insertRuntimeReportFromMenu);
+
   document
     .getElementById("launcher-new-notebook")
     .addEventListener("click", createNewNotebook);
   document
     .getElementById("launcher-import-notebook")
-    .addEventListener("click", () => {
-      document.getElementById("ipynb-file-input").click();
-    });
+    .addEventListener("click", openNotebookImportPicker);
   document
     .getElementById("launcher-import-file")
-    .addEventListener("click", () => {
-      document.getElementById("workspace-file-input").click();
-    });
+    .addEventListener("click", openWorkspaceFilePicker);
   document
     .getElementById("launcher-open-terminal")
     .addEventListener("click", () => {
-      setActiveDocument("launcher", "launcher");
+      openLauncher();
       document.getElementById("terminal-input").focus();
     });
   document
     .getElementById("launcher-run-runtime-check")
     .addEventListener("click", () => {
-      setActiveDocument("launcher", "launcher");
+      openLauncher();
       void runRuntimeDiagnostics();
     });
   document
     .getElementById("launcher-insert-runtime-report")
-    .addEventListener("click", () => {
-      const cell = insertRuntimeReportCell();
-      if (cell) {
-        notebookState.focusedCellId = cell.id;
-        focusCellEditor(cell.id);
-        updateSaveState("Inserted runtime report");
-      }
-    });
+    .addEventListener("click", insertRuntimeReportFromMenu);
   document
     .getElementById("launcher-copy-runtime-report")
     .addEventListener("click", () => {
-      setActiveDocument("launcher", "launcher");
-      void copyTextToClipboard(formatRuntimeDiagnosticsReport());
+      openLauncher();
+      copyRuntimeReportToClipboard();
     });
-  document
-    .getElementById("clear-all-outputs")
-    .addEventListener("click", clearAllOutputs);
+  bindClick("clear-all-outputs", clearAllOutputs);
   document
     .getElementById("run-runtime-diagnostics")
     .addEventListener("click", () => {
@@ -4399,60 +4396,30 @@ function wireEvents() {
     .addEventListener("click", () => {
       void runSelectedPackageDemo();
     });
-  document
-    .getElementById("start-debug")
-    .addEventListener("click", () => {
-      void startDebugSession();
-    });
-  document
-    .getElementById("continue-debug")
-    .addEventListener("click", () => {
-      void continueDebugSession();
-    });
-  document
-    .getElementById("step-debug")
-    .addEventListener("click", () => {
-      void stepDebugSession();
-    });
-  document
-    .getElementById("stop-debug")
-    .addEventListener("click", () => stopDebugSession());
-  document.getElementById("run-all").addEventListener("click", runAllCells);
-  document.getElementById("run-active-cell").addEventListener("click", () => {
+  bindClick("start-debug", () => {
+    void startDebugSession();
+  });
+  bindClick("continue-debug", () => {
+    void continueDebugSession();
+  });
+  bindClick("step-debug", () => {
+    void stepDebugSession();
+  });
+  bindClick("stop-debug", () => stopDebugSession());
+  bindClick("toolbar-run-all", runAllCells);
+  bindClick("menu-clear-outputs-cell", clearAllOutputs);
+  bindClick("toolbar-run-active-cell", () => {
     void runActiveCell();
   });
-  document.getElementById("run-above-cell").addEventListener("click", () => {
+  bindClick("toolbar-run-above-cell", () => {
     void runCellsAboveSelected();
   });
-  document.getElementById("run-below-cell").addEventListener("click", () => {
+  bindClick("toolbar-run-below-cell", () => {
     void runSelectedAndBelow();
   });
-  document.getElementById("run-all-cells-toolbar").addEventListener("click", () => {
-    void runAllCells();
-  });
-  document
-    .getElementById("new-notebook-sidebar")
-    .addEventListener("click", createNewNotebook);
-  document
-    .getElementById("rename-notebook")
-    .addEventListener("click", renameActiveNotebook);
-  document
-    .getElementById("duplicate-notebook")
-    .addEventListener("click", duplicateActiveNotebook);
-  document
-    .getElementById("delete-notebook")
-    .addEventListener("click", deleteActiveNotebook);
-  document
-    .getElementById("import-file")
-    .addEventListener("click", () => {
-      document.getElementById("workspace-file-input").click();
-    });
-  document
-    .getElementById("new-file")
-    .addEventListener("click", createWorkspaceTextFile);
-  document
-    .getElementById("new-folder")
-    .addEventListener("click", createWorkspaceFolder);
+  bindClick("rename-notebook", renameActiveNotebook);
+  bindClick("duplicate-notebook", duplicateActiveNotebook);
+  bindClick("delete-notebook", deleteActiveNotebook);
   document
     .getElementById("add-watch")
     .addEventListener("click", () => {
@@ -4474,17 +4441,6 @@ function wireEvents() {
         void runTerminalCommand();
       }
     });
-  document
-    .getElementById("export-notebook")
-    .addEventListener("click", exportNotebook);
-  document
-    .getElementById("import-notebook")
-    .addEventListener("click", () => {
-      document.getElementById("ipynb-file-input").click();
-    });
-  document
-    .getElementById("clear-recovery")
-    .addEventListener("click", clearRecovery);
   document
     .getElementById("notebook-title-input")
     .addEventListener("input", (event) => {
@@ -4586,7 +4542,6 @@ function wireEvents() {
       menu.removeAttribute("open");
     });
   });
-  wireCommandMirrors();
 }
 
 function createNewNotebook() {
@@ -5021,6 +4976,14 @@ function bootstrap() {
   renderPackageList();
   renderRuntimeDiagnostics();
   loadNotebookFromStorage();
+  if (!Object.keys(notebookState.panelVisibility || {}).length) {
+    notebookState.panelVisibility = {
+      watch-viewer: true,
+      debug-viewer: true,
+      terminal-output: true,
+      help-support-panel: true,
+    };
+  }
   document.getElementById("workspace-filter-input").value = notebookState.filters.notebooks;
   document.getElementById("workspace-file-filter-input").value = notebookState.filters.files;
   syncNotebookTitle();
