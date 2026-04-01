@@ -102,13 +102,13 @@ function codeMirrorAvailable() {
 function editorModeForPath(path) {
   const lowerPath = String(path || "").toLowerCase();
   if (lowerPath.endsWith(".py")) {
-    return { name: "python", version: 3 };
+    return "python";
   }
   if (lowerPath.endsWith(".md")) {
     return "markdown";
   }
   if (lowerPath.endsWith(".json")) {
-    return { name: "javascript", json: true };
+    return "javascript";
   }
   if (lowerPath.endsWith(".js") || lowerPath.endsWith(".mjs")) {
     return "javascript";
@@ -129,11 +129,11 @@ function editorModeForCell(cell) {
   if (cell?.cellType === "markdown") {
     return "markdown";
   }
-  return { name: "python", version: 3 };
+  return "python";
 }
 
-function editorInstance(textarea) {
-  return textarea?._pywholeCodeMirror || null;
+function syntaxHighlightInstance(textarea) {
+  return textarea?._pywholeSyntaxHighlight || null;
 }
 
 function setEditorValue(textarea, value) {
@@ -141,68 +141,154 @@ function setEditorValue(textarea, value) {
     return;
   }
   const nextValue = String(value || "");
-  const editor = editorInstance(textarea);
-  if (editor) {
-    if (editor.getValue() !== nextValue) {
-      editor.setValue(nextValue);
-    }
-    editor.refresh();
-    return;
-  }
   textarea.value = nextValue;
+  updateSyntaxHighlight(textarea);
 }
 
 function setEditorReadOnly(textarea, readOnly) {
   if (!textarea) {
     return;
   }
-  const editor = editorInstance(textarea);
-  if (editor) {
-    editor.setOption("readOnly", Boolean(readOnly));
-    editor.refresh();
-    return;
-  }
   textarea.disabled = Boolean(readOnly);
 }
 
 function setEditorMode(textarea, mode) {
-  const editor = editorInstance(textarea);
-  if (editor) {
-    editor.setOption("mode", mode);
-    editor.refresh();
+  const highlighter = syntaxHighlightInstance(textarea);
+  if (highlighter) {
+    highlighter.mode = mode || null;
+    updateSyntaxHighlight(textarea);
   }
 }
 
 function focusEditor(textarea) {
-  const editor = editorInstance(textarea);
-  if (editor) {
-    editor.focus();
-    return;
-  }
   textarea?.focus();
 }
 
-function createCodeMirrorEditor(textarea, options = {}) {
-  if (!textarea || !codeMirrorAvailable()) {
-    return null;
+function syncSyntaxHighlightScroll(textarea) {
+  const highlighter = syntaxHighlightInstance(textarea);
+  if (!highlighter) {
+    return;
   }
-  if (textarea._pywholeCodeMirror) {
-    return textarea._pywholeCodeMirror;
+  highlighter.overlay.scrollTop = textarea.scrollTop;
+  highlighter.overlay.scrollLeft = textarea.scrollLeft;
+}
+
+function escapeEditorHtml(text) {
+  return String(text || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function tokenizeEditorSource(text, modeName) {
+  const source = String(text || "");
+  if (!source) {
+    return "";
+  }
+  if (!codeMirrorAvailable() || !modeName) {
+    return escapeEditorHtml(source);
   }
 
-  const editor = globalThis.CodeMirror.fromTextArea(textarea, {
-    autoCloseBrackets: options.autoCloseBrackets ?? false,
-    lineNumbers: false,
-    lineWrapping: true,
-    matchBrackets: options.matchBrackets ?? false,
-    mode: options.mode ?? null,
-    readOnly: Boolean(options.readOnly),
-    scrollbarStyle: "native",
-    viewportMargin: Infinity,
-  });
-  textarea._pywholeCodeMirror = editor;
-  window.setTimeout(() => editor.refresh(), 0);
-  return editor;
+  const codeMirror = globalThis.CodeMirror;
+  if (typeof codeMirror.getMode !== "function" || typeof codeMirror.StringStream !== "function") {
+    return escapeEditorHtml(source);
+  }
+
+  let mode;
+  try {
+    mode = codeMirror.getMode({ indentUnit: 2 }, modeName);
+  } catch (_error) {
+    return escapeEditorHtml(source);
+  }
+  if (!mode || mode.name === "null") {
+    return escapeEditorHtml(source);
+  }
+
+  const state = typeof codeMirror.startState === "function"
+    ? codeMirror.startState(mode)
+    : typeof mode.startState === "function"
+      ? mode.startState()
+      : null;
+  const lines = source.split("\n");
+
+  return lines.map((line) => {
+    if (!line) {
+      return "";
+    }
+    const stream = new codeMirror.StringStream(line);
+    let html = "";
+    while (!stream.eol()) {
+      const style = mode.token(stream, state);
+      const token = stream.current();
+      if (!token) {
+        stream.next();
+        stream.start = stream.pos;
+        continue;
+      }
+      if (style) {
+        const className = style
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((entry) => `cm-${entry}`)
+          .join(" ");
+        html += `<span class="${className}">${escapeEditorHtml(token)}</span>`;
+      } else {
+        html += escapeEditorHtml(token);
+      }
+      stream.start = stream.pos;
+    }
+    return html;
+  }).join("\n");
+}
+
+function updateSyntaxHighlight(textarea) {
+  const highlighter = syntaxHighlightInstance(textarea);
+  if (!highlighter) {
+    return null;
+  }
+  highlighter.overlay.innerHTML = tokenizeEditorSource(textarea.value, highlighter.mode);
+  syncSyntaxHighlightScroll(textarea);
+  return highlighter;
+}
+
+function ensureSyntaxHighlight(textarea, options = {}) {
+  if (!textarea) {
+    return null;
+  }
+  if (!textarea.classList.contains("syntax-editor")) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "editor-stack";
+    const overlay = document.createElement("pre");
+    overlay.className = "syntax-highlight";
+    overlay.setAttribute("aria-hidden", "true");
+    textarea.parentNode?.insertBefore(wrapper, textarea);
+    wrapper.append(overlay, textarea);
+    textarea.classList.add("syntax-editor");
+    textarea.addEventListener("focus", () => {
+      wrapper.classList.add("is-editing");
+    });
+    textarea.addEventListener("blur", () => {
+      wrapper.classList.remove("is-editing");
+      updateSyntaxHighlight(textarea);
+    });
+    textarea.addEventListener("scroll", () => {
+      syncSyntaxHighlightScroll(textarea);
+    });
+  }
+
+  if (!textarea._pywholeSyntaxHighlight) {
+    textarea._pywholeSyntaxHighlight = {
+      mode: null,
+      overlay: textarea.parentNode?.querySelector(".syntax-highlight"),
+    };
+  }
+
+  const highlighter = textarea._pywholeSyntaxHighlight;
+  highlighter.mode = options.mode || highlighter.mode || null;
+  updateSyntaxHighlight(textarea);
+  return highlighter;
 }
 
 function syncWorkspaceFileDraft(value, sourceId = null) {
@@ -217,14 +303,10 @@ function syncWorkspaceFileDraft(value, sourceId = null) {
     if (!textarea) {
       continue;
     }
-    const editor = editorInstance(textarea);
-    if (editor) {
-      if (editor.getValue() !== nextValue) {
-        editor.setValue(nextValue);
-      }
-    } else if (textarea.value !== nextValue) {
+    if (textarea.value !== nextValue) {
       textarea.value = nextValue;
     }
+    updateSyntaxHighlight(textarea);
   }
 }
 
@@ -234,21 +316,12 @@ function bindWorkspaceFileEditor(editorId) {
     return;
   }
 
-  const editor = createCodeMirrorEditor(textarea, {
-    autoCloseBrackets: true,
-    matchBrackets: true,
+  ensureSyntaxHighlight(textarea, {
     mode: editorModeForPath(selectedWorkspaceFile()?.path || selectedWorkspaceFile()?.name || ""),
   });
-
-  if (editor) {
-    editor.on("change", (instance) => {
-      syncWorkspaceFileDraft(instance.getValue(), editorId);
-    });
-  } else {
-    textarea.addEventListener("input", (event) => {
-      syncWorkspaceFileDraft(event.target.value, editorId);
-    });
-  }
+  textarea.addEventListener("input", (event) => {
+    syncWorkspaceFileDraft(event.target.value, editorId);
+  });
 
   textarea.dataset.editorBound = "true";
 }
@@ -3822,6 +3895,7 @@ function renderNotebook() {
   const cellsRoot = document.getElementById("notebook-cells");
   const template = document.getElementById("cell-template");
   const nextRunnableCell = nextRunnableNotebookCell(notebook);
+  const editorBindings = [];
   renderWorkspaceFiles();
   renderDocumentTabs();
   renderMainFileSurface();
@@ -4023,41 +4097,31 @@ function renderNotebook() {
         void initializeAndRunCell(cell.id);
       };
 
-      const codeMirror = createCodeMirrorEditor(editor, {
-        autoCloseBrackets: cell.cellType === "code",
-        matchBrackets: cell.cellType === "code",
-        mode: editorModeForCell(cell),
-        readOnly: controlsLocked,
-      });
+      editorBindings.push(() => {
+        const liveEditor = cellsRoot.querySelector(`.cell[data-cell-id="${cell.id}"] .cell-editor`);
+        if (!liveEditor) {
+          return;
+        }
 
-      if (codeMirror) {
-        codeMirror.on("focus", handleEditorFocus);
-        codeMirror.on("change", (instance) => {
-          handleEditorInput(instance.getValue());
+        ensureSyntaxHighlight(liveEditor, {
+          mode: editorModeForCell(cell),
         });
-        codeMirror.addKeyMap({
-          "Cmd-Enter": () => runCellFromEditor(false),
-          "Ctrl-Enter": () => runCellFromEditor(false),
-          "Shift-Cmd-Enter": () => runCellFromEditor(true),
-          "Shift-Ctrl-Enter": () => runCellFromEditor(true),
-        });
-        window.setTimeout(() => codeMirror.refresh(), 0);
-      } else {
-        editor.addEventListener("focus", handleEditorFocus);
-        editor.addEventListener("keydown", (event) => {
+        liveEditor.addEventListener("focus", handleEditorFocus);
+        liveEditor.addEventListener("keydown", (event) => {
           if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
             event.preventDefault();
             runCellFromEditor(Boolean(event.shiftKey));
           }
         });
-        editor.addEventListener("input", (event) => {
+        liveEditor.addEventListener("input", (event) => {
           handleEditorInput(event.target.value);
         });
-      }
+      });
 
       return fragment;
     }),
   );
+  editorBindings.forEach((bindEditor) => bindEditor());
   syncExecutionUi();
   renderDebugViewer();
 }

@@ -1322,7 +1322,7 @@ button.danger {
   margin-top: 0;
 }
 
-.editor-label span {
+.editor-label > span {
   color: var(--muted);
   font-size: 0.74rem;
   letter-spacing: 0.08em;
@@ -1353,94 +1353,144 @@ button.danger {
   box-shadow: 0 0 0 1px rgba(124, 195, 255, 0.18);
 }
 
-.CodeMirror {
+.editor-stack {
+  position: relative;
   width: 100%;
   min-height: 164px;
   border: 1px solid var(--editor-border);
   border-radius: 4px;
   background: var(--editor-bg);
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 0.92rem;
-  line-height: 1.45;
-  height: auto;
+  overflow: hidden;
 }
 
-.CodeMirror-focused {
+.editor-stack:focus-within {
   border-color: rgba(124, 195, 255, 0.65);
   box-shadow: 0 0 0 1px rgba(124, 195, 255, 0.18);
 }
 
-.CodeMirror-scroll {
+.syntax-highlight,
+.syntax-editor {
+  width: 100%;
   min-height: 164px;
+  padding: 0.85rem 0.95rem;
+  font-family: var(--mono);
+  font-size: 0.92rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow: auto;
 }
 
-.CodeMirror-gutters {
-  background: rgba(255, 255, 255, 0.03);
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.CodeMirror-cursor {
-  border-left: 1px solid var(--accent-strong);
-}
-
-.CodeMirror-selected {
-  background: rgba(124, 195, 255, 0.18) !important;
-}
-
-.CodeMirror-lines {
-  padding: 0.85rem 0;
-}
-
-.CodeMirror pre.CodeMirror-line,
-.CodeMirror pre.CodeMirror-line-like {
-  padding: 0 0.95rem;
-}
-
-.cm-s-default.CodeMirror,
-.cm-s-default .CodeMirror-gutters {
-  background: var(--editor-bg);
+.syntax-highlight {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  margin: 0;
+  pointer-events: none;
   color: var(--text);
 }
 
+.syntax-editor {
+  position: relative;
+  z-index: 1;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--text);
+  resize: vertical;
+}
+
+.syntax-editor:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.syntax-editor::selection {
+  background: rgba(124, 195, 255, 0.18);
+}
+
+.syntax-editor::-moz-selection {
+  background: rgba(124, 195, 255, 0.18);
+}
+
+.editor-stack.is-editing .syntax-editor,
+.editor-stack:focus-within .syntax-editor {
+  color: var(--text);
+  -webkit-text-fill-color: currentColor;
+}
+
+.editor-stack.is-editing .syntax-highlight,
+.editor-stack:focus-within .syntax-highlight {
+  display: none;
+}
+
+.syntax-highlight .cm-comment,
 .cm-s-default .cm-comment {
   color: #7f95aa;
 }
 
+.syntax-highlight .cm-keyword,
 .cm-s-default .cm-keyword,
+.syntax-highlight .cm-operator,
 .cm-s-default .cm-operator {
   color: #8dc7ff;
 }
 
+.syntax-highlight .cm-number,
 .cm-s-default .cm-number,
+.syntax-highlight .cm-atom,
 .cm-s-default .cm-atom {
   color: #f0b56a;
 }
 
+.syntax-highlight .cm-string,
 .cm-s-default .cm-string,
+.syntax-highlight .cm-string-2,
 .cm-s-default .cm-string-2 {
   color: #95d8a8;
 }
 
+.syntax-highlight .cm-def,
 .cm-s-default .cm-def,
+.syntax-highlight .cm-variable,
+.cm-s-default .cm-variable,
+.syntax-highlight .cm-variable-2,
 .cm-s-default .cm-variable,
 .cm-s-default .cm-variable-2,
+.syntax-highlight .cm-property,
 .cm-s-default .cm-property {
   color: #f3f6fb;
 }
 
+.syntax-highlight .cm-builtin,
 .cm-s-default .cm-builtin,
+.syntax-highlight .cm-tag,
 .cm-s-default .cm-tag {
   color: #7bd0c5;
 }
 
+.syntax-highlight .cm-meta,
 .cm-s-default .cm-meta,
+.syntax-highlight .cm-qualifier,
 .cm-s-default .cm-qualifier {
   color: #c8a8ff;
 }
 
+.syntax-highlight .cm-type,
+.syntax-highlight .cm-variable-3,
+.syntax-highlight .cm-attribute,
+.syntax-highlight .cm-header,
+.syntax-highlight .cm-quote,
+.syntax-highlight .cm-hr,
+.syntax-highlight .cm-link,
 .cm-s-default .cm-link {
   color: #82bfff;
+}
+
+.syntax-highlight .cm-bracket,
+.cm-s-default .cm-bracket {
+  color: #f3f6fb;
 }
 
 .title-label {
