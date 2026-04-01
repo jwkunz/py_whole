@@ -925,6 +925,71 @@ function suggestDuplicateWorkspacePath(path, existingPaths) {
   return candidate;
 }
 
+function suggestUniqueWorkspacePath(path, existingPaths) {
+  const normalizedPath = normalizeWorkspacePath(path);
+  if (!normalizedPath) {
+    return "";
+  }
+  if (!existingPaths.has(normalizedPath)) {
+    return normalizedPath;
+  }
+
+  const directory = dirname(normalizedPath);
+  const fileName = basename(normalizedPath);
+  const extensionIndex = fileName.lastIndexOf(".");
+  const hasExtension = extensionIndex > 0;
+  const stem = hasExtension ? fileName.slice(0, extensionIndex) : fileName;
+  const extension = hasExtension ? fileName.slice(extensionIndex) : "";
+
+  let counter = 2;
+  let candidate = joinWorkspacePath(directory, `${stem} ${counter}${extension}`);
+  while (existingPaths.has(candidate)) {
+    counter += 1;
+    candidate = joinWorkspacePath(directory, `${stem} ${counter}${extension}`);
+  }
+  return candidate;
+}
+
+function workspacePathSet(excludeFileId = null) {
+  return new Set(
+    notebookState.workspace.files
+      .filter((entry) => entry.id !== excludeFileId)
+      .map((entry) => normalizeWorkspacePath(entry.path || entry.name)),
+  );
+}
+
+function applyWorkspaceFilePath(file, nextPath) {
+  const normalizedPath = normalizeWorkspacePath(nextPath);
+  if (!file || !normalizedPath) {
+    return false;
+  }
+
+  const previousAbsolutePath = `/workspace/${file.path || file.name}`;
+  file.path = normalizedPath;
+  file.name = basename(normalizedPath);
+  file.updatedAt = new Date().toISOString();
+
+  if (runtimeAdapter.pyodide) {
+    const nextAbsolutePath = `/workspace/${file.path || file.name}`;
+    ensureParentDirectories(runtimeAdapter.pyodide.FS, nextAbsolutePath);
+    try {
+      runtimeAdapter.pyodide.FS.writeFile(nextAbsolutePath, decodeBase64ToUint8Array(file.base64));
+      if (nextAbsolutePath !== previousAbsolutePath) {
+        try {
+          runtimeAdapter.pyodide.FS.unlink(previousAbsolutePath);
+        } catch (_error) {
+        }
+      }
+    } catch (_error) {
+    }
+  }
+
+  if (notebookState.selectedWorkspaceFileId === file.id && isLikelyTextFile(file)) {
+    notebookState.workspaceFileDraft = decodeBase64ToText(file.base64);
+  }
+  return true;
+}
+
 function isLikelyTextFile(file) {
   const type = String(file?.type || "");
   const path = String(file?.path || file?.name || "").toLowerCase();
@@ -1035,6 +1100,8 @@ function syncExecutionUi() {
   const locked = busy || notebookState.debug.active;
   const executionText = executionStatusText();
   const canInterrupt = busy && !interruptRequested;
+  const selectedFile = selectedWorkspaceFile();
+  const selectedTextFile = selectedFile && isLikelyTextFile(selectedFile);
 
   const executionStateNode = document.getElementById("execution-state");
   if (executionStateNode) {
@@ -1075,6 +1142,11 @@ function syncExecutionUi() {
     document.getElementById("menu-import-file"),
     document.getElementById("menu-new-file"),
     document.getElementById("menu-new-folder"),
+    document.getElementById("menu-rename-workspace-file"),
+    document.getElementById("menu-save-workspace-file"),
+    document.getElementById("menu-save-workspace-file-as"),
+    document.getElementById("menu-revert-workspace-file"),
+    document.getElementById("menu-export-workspace-file"),
     document.getElementById("menu-clear-recovery"),
     document.getElementById("menu-clear-outputs-cell"),
     document.getElementById("menu-run-runtime-diagnostics"),
@@ -1094,6 +1166,31 @@ function syncExecutionUi() {
   const toolbarInitButton = document.getElementById("toolbar-initialize-runtime");
   if (toolbarInitButton) {
     toolbarInitButton.disabled = locked || notebookState.runtimeReady;
+  }
+
+  const saveWorkspaceFileButton = document.getElementById("menu-save-workspace-file");
+  if (saveWorkspaceFileButton) {
+    saveWorkspaceFileButton.disabled = locked || !selectedTextFile;
+  }
+
+  const saveWorkspaceFileAsButton = document.getElementById("menu-save-workspace-file-as");
+  if (saveWorkspaceFileAsButton) {
+    saveWorkspaceFileAsButton.disabled = locked || !selectedTextFile;
+  }
+
+  const revertWorkspaceFileButton = document.getElementById("menu-revert-workspace-file");
+  if (revertWorkspaceFileButton) {
+    revertWorkspaceFileButton.disabled = locked || !selectedTextFile;
+  }
+
+  const renameWorkspaceFileButton = document.getElementById("menu-rename-workspace-file");
+  if (renameWorkspaceFileButton) {
+    renameWorkspaceFileButton.disabled = locked || !selectedFile;
+  }
+
+  const exportWorkspaceFileButton = document.getElementById("menu-export-workspace-file");
+  if (exportWorkspaceFileButton) {
+    exportWorkspaceFileButton.disabled = locked || !selectedFile;
   }
 
   document.querySelectorAll(".workspace-item").forEach((item) => {
@@ -1223,10 +1320,11 @@ function insertTextIntoActiveEditor(text) {
   return false;
 }
 
-function createNotebookRecord(title = "Untitled") {
+function createNotebookRecord(title = "Untitled", options = {}) {
   return {
     id: generateId("nb"),
     title,
+    fileId: options.fileId || null,
     cells: [],
     updatedAt: new Date().toISOString(),
   };
@@ -1249,6 +1347,10 @@ function activeNotebook() {
   return notebookState.workspace.notebooks.find(
     (notebook) => notebook.id === notebookState.workspace.activeNotebookId,
   );
+}
+
+function notebookForFileId(fileId) {
+  return notebookState.workspace.notebooks.find((notebook) => notebook.fileId === fileId) || null;
 }
 
 function activeDocument() {
@@ -1377,8 +1479,7 @@ function notebookFileName() {
   return trimmed.endsWith(".ipynb") ? trimmed : `${trimmed}.ipynb`;
 }
 
-function buildIpynbDocument() {
-  const notebook = activeNotebook();
+function buildIpynbDocument(notebook = activeNotebook()) {
   const cells = notebook ? notebook.cells : [];
   return {
     cells: cells.map((cell) => ({
@@ -1550,6 +1651,7 @@ function parseOutputs(outputs) {
 }
 
 function saveNotebookToStorage() {
+  syncNotebookWorkspaceFiles();
   const payload = {
     activeNotebookId: notebookState.workspace.activeNotebookId,
     activeDocument: notebookState.workspace.activeDocument,
@@ -1559,6 +1661,7 @@ function saveNotebookToStorage() {
     notebooks: notebookState.workspace.notebooks.map((notebook) => ({
       id: notebook.id,
       title: notebook.title,
+      fileId: notebook.fileId,
       updatedAt: notebook.updatedAt,
       notebook: buildIpynbDocumentForNotebook(notebook),
     })),
@@ -1575,6 +1678,7 @@ function loadNotebookFromStorage() {
     const notebook = createStarterNotebook();
     notebookState.workspace.notebooks = [notebook];
     notebookState.workspace.activeNotebookId = notebook.id;
+    syncNotebookWorkspaceFiles();
     updateSaveState("Not yet saved");
     return;
   }
@@ -1588,6 +1692,7 @@ function loadNotebookFromStorage() {
     const notebook = createStarterNotebook();
     notebookState.workspace.notebooks = [notebook];
     notebookState.workspace.activeNotebookId = notebook.id;
+    syncNotebookWorkspaceFiles();
     updateSaveState("Recovery failed");
   }
 }
@@ -1608,6 +1713,7 @@ function applyImportedNotebook(document, titleHint) {
     : [createCodeCell("print('new notebook')")];
   notebook.updatedAt = new Date().toISOString();
   notebookState.workspace.notebooks.push(notebook);
+  syncNotebookWorkspaceFile(notebook, normalizeNotebookWorkspacePath(`${notebook.title}.ipynb`));
   notebookState.workspace.activeNotebookId = notebook.id;
   notebookState.workspace.activeDocument = { type: "notebook", id: notebook.id };
   syncNotebookTitle();
@@ -1631,6 +1737,7 @@ function applyWorkspaceState(state) {
   notebookState.workspace.notebooks = notebooks.length
     ? notebooks.map((entry) => hydrateNotebookRecord(entry))
     : [createStarterNotebook()];
+  syncNotebookWorkspaceFiles();
   notebookState.workspace.activeNotebookId =
     state.activeNotebookId && notebookState.workspace.notebooks.some((entry) => entry.id === state.activeNotebookId)
       ? state.activeNotebookId
@@ -1642,7 +1749,9 @@ function applyWorkspaceState(state) {
 }
 
 function hydrateNotebookRecord(entry) {
-  const notebook = createNotebookRecord(stripNotebookExtension(entry.title || "Recovered"));
+  const notebook = createNotebookRecord(stripNotebookExtension(entry.title || "Recovered"), {
+    fileId: entry.fileId || null,
+  });
   notebook.id = entry.id || notebook.id;
   notebook.updatedAt = entry.updatedAt || new Date().toISOString();
   const document = entry.notebook || {};
@@ -1662,15 +1771,71 @@ function hydrateNotebookRecord(entry) {
 }
 
 function buildIpynbDocumentForNotebook(notebook) {
-  const previousId = notebookState.workspace.activeNotebookId;
-  notebookState.workspace.activeNotebookId = notebook.id;
-  const document = buildIpynbDocument();
-  notebookState.workspace.activeNotebookId = previousId;
-  return document;
+  return buildIpynbDocument(notebook);
 }
 
 function stripNotebookExtension(name) {
   return String(name || "Untitled").replace(/\.ipynb$/i, "");
+}
+
+function normalizeNotebookWorkspacePath(path) {
+  const normalized = normalizeWorkspacePath(path);
+  if (!normalized) {
+    return "Untitled.ipynb";
+  }
+  return normalized.endsWith(".ipynb") ? normalized : `${normalized}.ipynb`;
+}
+
+function notebookWorkspacePath(notebook) {
+  const linkedFile = notebook?.fileId
+    ? notebookState.workspace.files.find((file) => file.id === notebook.fileId)
+    : null;
+  if (linkedFile) {
+    return normalizeNotebookWorkspacePath(linkedFile.path || linkedFile.name);
+  }
+  return normalizeNotebookWorkspacePath(`${notebook?.title || "Untitled"}.ipynb`);
+}
+
+function notebookWorkspaceFileBytes(notebook) {
+  return new TextEncoder().encode(JSON.stringify(buildIpynbDocumentForNotebook(notebook), null, 2));
+}
+
+function syncNotebookWorkspaceFile(notebook, preferredPath = null) {
+  if (!notebook) {
+    return null;
+  }
+
+  const linkedFile = notebook.fileId
+    ? notebookState.workspace.files.find((file) => file.id === notebook.fileId)
+    : null;
+  const existingPaths = workspacePathSet(linkedFile?.id || null);
+  const desiredPath = normalizeNotebookWorkspacePath(preferredPath || notebookWorkspacePath(notebook));
+  const nextPath = linkedFile
+    ? desiredPath
+    : suggestUniqueWorkspacePath(desiredPath, existingPaths);
+  const bytes = notebookWorkspaceFileBytes(notebook);
+
+  if (linkedFile) {
+    linkedFile.path = nextPath;
+    linkedFile.name = basename(nextPath);
+    linkedFile.type = linkedFile.type || "application/x-ipynb+json";
+    linkedFile.size = bytes.length;
+    linkedFile.updatedAt = notebook.updatedAt;
+    linkedFile.base64 = encodeUint8ArrayToBase64(bytes);
+    return linkedFile;
+  }
+
+  const record = createWorkspaceFile(nextPath, bytes, "application/x-ipynb+json");
+  record.updatedAt = notebook.updatedAt;
+  notebookState.workspace.files.push(record);
+  notebook.fileId = record.id;
+  return record;
+}
+
+function syncNotebookWorkspaceFiles() {
+  notebookState.workspace.notebooks.forEach((notebook) => {
+    syncNotebookWorkspaceFile(notebook);
+  });
 }
 
 function runtimeDiagnosticByPackageName() {
@@ -2005,7 +2170,7 @@ function renderDocumentTabs() {
   ];
 
   const selectedFile = selectedWorkspaceFile();
-  if (selectedFile) {
+  if (selectedFile && !notebookForFileId(selectedFile.id)) {
     tabs.push({
       type: "file",
       id: selectedFile.id,
@@ -2042,6 +2207,18 @@ function renderDocumentTabs() {
 }
 
 function setActiveDocument(type, id) {
+  if (type === "file") {
+    const linkedNotebook = notebookForFileId(id);
+    if (linkedNotebook) {
+      notebookState.workspace.activeDocument = { type: "notebook", id: linkedNotebook.id };
+      notebookState.workspace.activeNotebookId = linkedNotebook.id;
+      notebookState.selectedWorkspaceFileId = id;
+      syncNotebookTitle();
+      renderNotebook();
+      scheduleAutosave();
+      return;
+    }
+  }
   notebookState.workspace.activeDocument = { type, id };
   if (type === "notebook") {
     notebookState.workspace.activeNotebookId = id;
@@ -2727,6 +2904,16 @@ function applyPanelVisibility() {
 function selectWorkspaceFile(fileId) {
   const file = notebookState.workspace.files.find((entry) => entry.id === fileId);
   if (!file) {
+    return;
+  }
+  const linkedNotebook = notebookForFileId(file.id);
+  if (linkedNotebook) {
+    notebookState.selectedWorkspaceFileId = file.id;
+    notebookState.workspace.activeNotebookId = linkedNotebook.id;
+    notebookState.workspace.activeDocument = { type: "notebook", id: linkedNotebook.id };
+    syncNotebookTitle();
+    renderNotebook();
+    scheduleAutosave();
     return;
   }
   notebookState.selectedWorkspaceFileId = file.id;
@@ -4388,6 +4575,20 @@ function wireEvents() {
   bindClick("menu-import-file", openWorkspaceFilePicker);
   bindClick("menu-new-file", createWorkspaceTextFile);
   bindClick("menu-new-folder", createWorkspaceFolder);
+  bindClick("menu-rename-workspace-file", renameSelectedWorkspaceFile);
+  bindClick("menu-save-workspace-file", () => {
+    void saveSelectedWorkspaceFile();
+  });
+  bindClick("menu-save-workspace-file-as", () => {
+    void saveSelectedWorkspaceFileAs();
+  });
+  bindClick("menu-revert-workspace-file", revertSelectedWorkspaceFile);
+  bindClick("menu-export-workspace-file", () => {
+    const file = selectedWorkspaceFile();
+    if (file) {
+      exportWorkspaceFile(file.id);
+    }
+  });
   bindClick("menu-clear-recovery", clearRecovery);
   bindClick("menu-run-runtime-diagnostics", () => {
     void runRuntimeDiagnostics();
@@ -4614,6 +4815,8 @@ function wireEvents() {
 function createNewNotebook() {
   const notebook = createStarterNotebook();
   notebookState.workspace.notebooks.push(notebook);
+  const linkedFile = syncNotebookWorkspaceFile(notebook, normalizeNotebookWorkspacePath(`${notebook.title}.ipynb`));
+  notebookState.selectedWorkspaceFileId = linkedFile?.id || null;
   notebookState.workspace.activeNotebookId = notebook.id;
   notebookState.workspace.activeDocument = { type: "notebook", id: notebook.id };
   syncNotebookTitle();
@@ -4681,6 +4884,7 @@ function renameActiveNotebook() {
   }
   notebook.title = normalized;
   notebook.updatedAt = new Date().toISOString();
+  syncNotebookWorkspaceFile(notebook, normalizeNotebookWorkspacePath(`${normalized}.ipynb`));
   syncNotebookTitle();
   renderNotebook();
   scheduleAutosave();
@@ -4704,8 +4908,11 @@ function duplicateActiveNotebook() {
   duplicate.id = generateId("nb");
   duplicate.title = `${notebook.title} Copy`;
   duplicate.updatedAt = new Date().toISOString();
+  duplicate.fileId = null;
 
   notebookState.workspace.notebooks.push(duplicate);
+  const linkedFile = syncNotebookWorkspaceFile(duplicate, normalizeNotebookWorkspacePath(`${duplicate.title}.ipynb`));
+  notebookState.selectedWorkspaceFileId = linkedFile?.id || null;
   notebookState.workspace.activeNotebookId = duplicate.id;
   notebookState.workspace.activeDocument = { type: "notebook", id: duplicate.id };
   syncNotebookTitle();
@@ -4717,16 +4924,8 @@ function createWorkspaceTextFile() {
   if (notebookState.execution.busy || notebookState.debug.active) {
     return;
   }
-  const requestedPath = normalizeWorkspacePath(window.prompt("New workspace file path:", "notes.txt") || "");
+  const requestedPath = suggestUniqueWorkspacePath("untitled.txt", workspacePathSet());
   if (!requestedPath) {
-    return;
-  }
-  if (
-    notebookState.workspace.files.some(
-      (entry) => (entry.path || entry.name) === requestedPath,
-    )
-  ) {
-    updateSaveState("Create failed: a workspace file already uses that path.");
     return;
   }
 
@@ -4741,6 +4940,7 @@ function createWorkspaceTextFile() {
     }
   }
   selectWorkspaceFile(record.id);
+  updateSaveState(`Created ${record.path}`);
   renderNotebook();
   scheduleAutosave();
 }
@@ -4796,36 +4996,12 @@ function renameWorkspaceFile(fileId) {
   if (!nextPath || nextPath === (file.path || file.name)) {
     return;
   }
-  if (
-    notebookState.workspace.files.some(
-      (entry) => entry.id !== file.id && (entry.path || entry.name) === nextPath,
-    )
-  ) {
+  if (workspacePathSet(file.id).has(nextPath)) {
     updateSaveState("Rename failed: a workspace file already uses that path.");
     return;
   }
-
-  const previousAbsolutePath = `/workspace/${file.path || file.name}`;
-  file.path = nextPath;
-  file.name = basename(nextPath);
-  file.updatedAt = new Date().toISOString();
-
-  if (runtimeAdapter.pyodide) {
-    const nextAbsolutePath = `/workspace/${file.path || file.name}`;
-    ensureParentDirectories(runtimeAdapter.pyodide.FS, nextAbsolutePath);
-    try {
-      runtimeAdapter.pyodide.FS.writeFile(nextAbsolutePath, decodeBase64ToUint8Array(file.base64));
-      try {
-        runtimeAdapter.pyodide.FS.unlink(previousAbsolutePath);
-      } catch (_error) {
-      }
-    } catch (_error) {
-    }
-  }
-
-  if (notebookState.selectedWorkspaceFileId === file.id && isLikelyTextFile(file)) {
-    notebookState.workspaceFileDraft = decodeBase64ToText(file.base64);
-  }
+  applyWorkspaceFilePath(file, nextPath);
+  updateSaveState(`Renamed to ${nextPath}`);
   renderNotebook();
   scheduleAutosave();
 }
@@ -4845,36 +5021,56 @@ function moveWorkspaceFile(fileId) {
   if (!nextPath || nextPath === (file.path || file.name)) {
     return;
   }
-  if (
-    notebookState.workspace.files.some(
-      (entry) => entry.id !== file.id && (entry.path || entry.name) === nextPath,
-    )
-  ) {
+  if (workspacePathSet(file.id).has(nextPath)) {
     updateSaveState("Move failed: a workspace file already uses that path.");
     return;
   }
+  applyWorkspaceFilePath(file, nextPath);
+  updateSaveState(`Moved to ${nextPath}`);
+  renderNotebook();
+  scheduleAutosave();
+}
 
-  const previousAbsolutePath = `/workspace/${file.path || file.name}`;
-  file.path = nextPath;
-  file.name = basename(nextPath);
-  file.updatedAt = new Date().toISOString();
+function renameSelectedWorkspaceFile() {
+  const file = selectedWorkspaceFile();
+  if (file) {
+    renameWorkspaceFile(file.id);
+  }
+}
 
+async function saveSelectedWorkspaceFileAs() {
+  const file = selectedWorkspaceFile();
+  if (!file || !isLikelyTextFile(file)) {
+    return;
+  }
+
+  const nextPath = normalizeWorkspacePath(
+    window.prompt("Save workspace file as:", file.path || file.name) || "",
+  );
+  if (!nextPath) {
+    return;
+  }
+  if (workspacePathSet().has(nextPath)) {
+    updateSaveState("Save As failed: a workspace file already uses that path.");
+    return;
+  }
+
+  const record = createWorkspaceFile(
+    nextPath,
+    new TextEncoder().encode(notebookState.workspaceFileDraft),
+    file.type || "text/plain",
+  );
+  notebookState.workspace.files.push(record);
   if (runtimeAdapter.pyodide) {
-    const nextAbsolutePath = `/workspace/${file.path || file.name}`;
-    ensureParentDirectories(runtimeAdapter.pyodide.FS, nextAbsolutePath);
+    const absolutePath = `/workspace/${record.path || record.name}`;
+    ensureParentDirectories(runtimeAdapter.pyodide.FS, absolutePath);
     try {
-      runtimeAdapter.pyodide.FS.writeFile(nextAbsolutePath, decodeBase64ToUint8Array(file.base64));
-      try {
-        runtimeAdapter.pyodide.FS.unlink(previousAbsolutePath);
-      } catch (_error) {
-      }
+      runtimeAdapter.pyodide.FS.writeFile(absolutePath, decodeBase64ToUint8Array(record.base64));
     } catch (_error) {
     }
   }
-
-  if (notebookState.selectedWorkspaceFileId === file.id && isLikelyTextFile(file)) {
-    notebookState.workspaceFileDraft = decodeBase64ToText(file.base64);
-  }
+  selectWorkspaceFile(record.id);
+  updateSaveState(`Saved as ${record.path}`);
   renderNotebook();
   scheduleAutosave();
 }
@@ -4883,11 +5079,17 @@ function deleteActiveNotebook() {
   if (notebookState.workspace.notebooks.length <= 1) {
     return;
   }
+  const activeNotebookRecord = activeNotebook();
+  const linkedFileId = activeNotebookRecord?.fileId || null;
   const currentId = notebookState.workspace.activeNotebookId;
   notebookState.workspace.notebooks = notebookState.workspace.notebooks.filter(
     (notebook) => notebook.id !== currentId,
   );
+  if (linkedFileId) {
+    notebookState.workspace.files = notebookState.workspace.files.filter((file) => file.id !== linkedFileId);
+  }
   notebookState.workspace.activeNotebookId = notebookState.workspace.notebooks[0].id;
+  notebookState.selectedWorkspaceFileId = notebookState.workspace.notebooks[0].fileId || null;
   notebookState.workspace.activeDocument = {
     type: "notebook",
     id: notebookState.workspace.activeNotebookId,
@@ -4904,7 +5106,10 @@ function exportNotebook() {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = notebookFileName();
+  const notebook = activeNotebook();
+  anchor.download = notebook?.fileId
+    ? (notebookState.workspace.files.find((file) => file.id === notebook.fileId)?.name || notebookFileName())
+    : notebookFileName();
   anchor.click();
   URL.revokeObjectURL(url);
   updateSaveState("Exported .ipynb");
@@ -4920,6 +5125,8 @@ async function importNotebook(event) {
     const text = await file.text();
     const document = JSON.parse(text);
     applyImportedNotebook(document, file.name);
+    const notebook = activeNotebook();
+    notebookState.selectedWorkspaceFileId = notebook?.fileId || null;
     renderNotebook();
     scheduleAutosave();
   } catch (error) {
