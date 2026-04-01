@@ -1374,9 +1374,10 @@ function createMarkdownCell(source) {
     cellType: "markdown",
     breakpoint: false,
     source,
+    rendered: false,
     outputs: [],
     executionCount: null,
-    status: "Idle",
+    status: "Editing",
   };
 }
 
@@ -1386,9 +1387,10 @@ function cloneCell(cell) {
     cellType: cell.cellType,
     breakpoint: Boolean(cell.breakpoint),
     source: cell.source,
+    rendered: cell.cellType === "markdown" ? Boolean(cell.rendered) : false,
     outputs: (cell.outputs || []).map((output) => ({ ...output })),
     executionCount: cell.cellType === "code" ? cell.executionCount : null,
-    status: "Idle",
+    status: cell.cellType === "markdown" ? (cell.rendered ? "Rendered" : "Editing") : "Idle",
   };
 }
 
@@ -1487,6 +1489,7 @@ function buildIpynbDocument(notebook = activeNotebook()) {
       metadata: {
         py_whole: {
           breakpoint: Boolean(cell.breakpoint),
+          rendered: cell.cellType === "markdown" ? Boolean(cell.rendered) : undefined,
         },
       },
       outputs:
@@ -1705,9 +1708,15 @@ function applyImportedNotebook(document, titleHint) {
         cellType: cell.cell_type === "markdown" ? "markdown" : "code",
         breakpoint: Boolean(cell.metadata?.py_whole?.breakpoint),
         source: joinNotebookSource(cell.source),
+        rendered: cell.cell_type === "markdown" ? Boolean(cell.metadata?.py_whole?.rendered) : false,
         outputs: parseOutputs(cell.outputs),
         executionCount: cell.execution_count ?? null,
-        status: "Idle",
+        status:
+          cell.cell_type === "markdown"
+            ? cell.metadata?.py_whole?.rendered
+              ? "Rendered"
+              : "Editing"
+            : "Idle",
       }))
     : [createCodeCell("print('new notebook')")];
   notebook.updatedAt = new Date().toISOString();
@@ -1760,9 +1769,15 @@ function hydrateNotebookRecord(entry) {
         cellType: cell.cell_type === "markdown" ? "markdown" : "code",
         breakpoint: Boolean(cell.metadata?.py_whole?.breakpoint),
         source: joinNotebookSource(cell.source),
+        rendered: cell.cell_type === "markdown" ? Boolean(cell.metadata?.py_whole?.rendered) : false,
         outputs: parseOutputs(cell.outputs),
         executionCount: cell.execution_count ?? null,
-        status: "Idle",
+        status:
+          cell.cell_type === "markdown"
+            ? cell.metadata?.py_whole?.rendered
+              ? "Rendered"
+              : "Editing"
+            : "Idle",
       }))
     : [createCodeCell("print('new notebook')")];
   return notebook;
@@ -3596,12 +3611,15 @@ function renderNotebook() {
       statusNode.textContent = statusParts.join(" • ");
       editorModeLabel.textContent = cell.cellType === "markdown" ? "Markdown" : "Python";
       editor.value = cell.source;
-      markdownPreviewBlock.classList.toggle("is-hidden", cell.cellType !== "markdown");
+      markdownPreviewBlock.classList.toggle(
+        "is-hidden",
+        cell.cellType !== "markdown" || !cell.rendered,
+      );
       outputBlock.classList.toggle(
         "is-hidden",
         cell.cellType === "markdown" || !Array.isArray(cell.outputs) || cell.outputs.length === 0,
       );
-      if (cell.cellType === "markdown") {
+      if (cell.cellType === "markdown" && cell.rendered) {
         renderMarkdownPreview(markdownPreview, cell.source);
       }
       renderCellOutputs(outputList, cell.outputs);
@@ -3632,8 +3650,8 @@ function renderNotebook() {
         notebookState.execution.busy && notebookState.execution.currentCellId === cell.id;
       const otherCellRunning =
         notebookState.execution.busy && notebookState.execution.currentCellId !== cell.id;
-      runButton.disabled = cell.cellType !== "code" || currentCellRunning || otherCellRunning || notebookState.debug.active;
-      runButton.hidden = cell.cellType !== "code";
+      runButton.disabled = currentCellRunning || otherCellRunning || notebookState.debug.active;
+      runButton.hidden = false;
       if (cell.cellType === "code") {
         runButton.textContent = currentCellRunning
           ? "Running"
@@ -3649,6 +3667,13 @@ function renderNotebook() {
               : notebookState.runtimeReady
                 ? "Run this code cell."
                 : "Initialize the embedded Python runtime, then run this code cell.";
+      } else {
+        runButton.textContent = "Render";
+        runButton.title = otherCellRunning
+          ? "Another cell is currently running."
+          : notebookState.debug.active
+            ? "Finish or stop the current debug session before rendering markdown."
+            : "Render this markdown cell.";
       }
       clearOutputButton.disabled = cell.cellType !== "code" || controlsLocked;
       toggleKindButton.disabled = controlsLocked;
@@ -3671,9 +3696,6 @@ function renderNotebook() {
         syncExecutionUi();
       });
       editor.addEventListener("keydown", (event) => {
-        if (cell.cellType !== "code") {
-          return;
-        }
         if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
           event.preventDefault();
           if (event.shiftKey) {
@@ -3685,12 +3707,10 @@ function renderNotebook() {
               if (!notebookAfterRun || currentIndex < 0) {
                 return;
               }
-              const nextCodeCell = notebookAfterRun.cells
-                .slice(currentIndex + 1)
-                .find((entry) => entry.cellType === "code");
-              if (nextCodeCell) {
-                notebookState.focusedCellId = nextCodeCell.id;
-                focusCellEditor(nextCodeCell.id);
+              const nextCell = notebookAfterRun.cells[currentIndex + 1];
+              if (nextCell) {
+                notebookState.focusedCellId = nextCell.id;
+                focusCellEditor(nextCell.id);
               }
             });
           } else {
@@ -3700,6 +3720,12 @@ function renderNotebook() {
       });
       editor.addEventListener("input", (event) => {
         cell.source = event.target.value;
+        if (cell.cellType === "markdown") {
+          cell.rendered = false;
+          cell.status = "Editing";
+          statusNode.textContent = "Editing";
+          markdownPreviewBlock.classList.add("is-hidden");
+        }
         scheduleAutosave();
       });
 
@@ -3734,6 +3760,20 @@ function addMarkdownCell() {
     return;
   }
   notebook.cells.push(createMarkdownCell("# Markdown cell\n\nDocument your work here."));
+  notebook.updatedAt = new Date().toISOString();
+  renderNotebook();
+  scheduleAutosave();
+}
+
+function renderMarkdownCell(cellId) {
+  const notebook = activeNotebook();
+  const cell = notebook && notebook.cells.find((entry) => entry.id === cellId);
+  if (!cell || cell.cellType !== "markdown" || notebookState.execution.busy || notebookState.debug.active) {
+    return;
+  }
+
+  cell.rendered = true;
+  cell.status = "Rendered";
   notebook.updatedAt = new Date().toISOString();
   renderNotebook();
   scheduleAutosave();
@@ -3779,6 +3819,15 @@ async function runSelectedPackageDemo() {
 }
 
 async function initializeAndRunCell(cellId) {
+  const notebook = activeNotebook();
+  const cell = notebook && notebook.cells.find((entry) => entry.id === cellId);
+  if (!cell) {
+    return;
+  }
+  if (cell.cellType === "markdown") {
+    renderMarkdownCell(cell.id);
+    return;
+  }
   if (!notebookState.runtimeReady) {
     try {
       await runtimeAdapter.initialize();
@@ -4152,11 +4201,13 @@ function toggleCellType(cellId) {
 
   if (cell.cellType === "code") {
     cell.cellType = "markdown";
+    cell.rendered = false;
     cell.outputs = [];
     cell.executionCount = null;
-    cell.status = "Idle";
+    cell.status = "Editing";
   } else {
     cell.cellType = "code";
+    cell.rendered = false;
     cell.status = "Idle";
   }
 
