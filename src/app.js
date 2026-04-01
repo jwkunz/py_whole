@@ -963,10 +963,12 @@ function updateKernelState(text) {
 
 function updateSaveState(text) {
   notebookState.saveState = text;
-  const node = document.getElementById("save-state");
-  if (node) {
-    node.textContent = text;
-  }
+  ["save-state", "session-save-state"].forEach((id) => {
+    const node = document.getElementById(id);
+    if (node) {
+      node.textContent = text;
+    }
+  });
 }
 
 function executionStatusText() {
@@ -2669,7 +2671,9 @@ function applyPanelVisibility() {
     }
     const hidden = Boolean(notebookState.panelVisibility[targetId]);
     target.classList.toggle("is-hidden", hidden);
-    button.textContent = hidden ? "Show" : "Hide";
+    const showLabel = button.dataset.showLabel || "Show";
+    const hideLabel = button.dataset.hideLabel || "Hide";
+    button.textContent = hidden ? showLabel : hideLabel;
   });
 }
 

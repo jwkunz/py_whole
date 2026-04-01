@@ -72,7 +72,13 @@ __INLINE_CSS__
         <section class="panel">
           <div class="panel-header">
             <h2>Packages</h2>
-            <button class="panel-toggle secondary" data-panel-target="package-panel" type="button">Hide</button>
+            <button
+              class="panel-toggle secondary"
+              data-panel-target="package-panel"
+              data-show-label="Show"
+              data-hide-label="Hide"
+              type="button"
+            >Hide</button>
           </div>
           <div id="package-panel">
             <p class="panel-copy">
@@ -91,7 +97,13 @@ __INLINE_CSS__
         <section class="panel">
           <div class="panel-header">
             <h2>Runtime</h2>
-            <button class="panel-toggle secondary" data-panel-target="runtime-support-panel" type="button">Hide</button>
+            <button
+              class="panel-toggle secondary"
+              data-panel-target="runtime-support-panel"
+              data-show-label="Show"
+              data-hide-label="Hide"
+              type="button"
+            >Hide</button>
           </div>
           <div id="runtime-support-panel">
             <p class="panel-copy">
@@ -158,11 +170,41 @@ __INLINE_CSS__
                 <details class="menu-group">
                   <summary>View</summary>
                   <div class="menu-panel">
-                    <button class="menu-action secondary panel-toggle" data-panel-target="variable-viewer" type="button">Toggle Variables</button>
-                    <button class="menu-action secondary panel-toggle" data-panel-target="variable-detail-viewer" type="button">Toggle Inspector</button>
-                    <button class="menu-action secondary panel-toggle" data-panel-target="watch-viewer" type="button">Toggle Watch</button>
-                    <button class="menu-action secondary panel-toggle" data-panel-target="debug-viewer" type="button">Toggle Debug</button>
-                    <button class="menu-action secondary panel-toggle" data-panel-target="terminal-output" type="button">Toggle Terminal</button>
+                    <button
+                      class="menu-action secondary panel-toggle"
+                      data-panel-target="variable-viewer"
+                      data-show-label="Show Variables"
+                      data-hide-label="Hide Variables"
+                      type="button"
+                    >Hide Variables</button>
+                    <button
+                      class="menu-action secondary panel-toggle"
+                      data-panel-target="variable-detail-viewer"
+                      data-show-label="Show Inspector"
+                      data-hide-label="Hide Inspector"
+                      type="button"
+                    >Hide Inspector</button>
+                    <button
+                      class="menu-action secondary panel-toggle"
+                      data-panel-target="watch-viewer"
+                      data-show-label="Show Watch"
+                      data-hide-label="Hide Watch"
+                      type="button"
+                    >Hide Watch</button>
+                    <button
+                      class="menu-action secondary panel-toggle"
+                      data-panel-target="debug-viewer"
+                      data-show-label="Show Debug"
+                      data-hide-label="Hide Debug"
+                      type="button"
+                    >Hide Debug</button>
+                    <button
+                      class="menu-action secondary panel-toggle"
+                      data-panel-target="terminal-output"
+                      data-show-label="Show Terminal"
+                      data-hide-label="Hide Terminal"
+                      type="button"
+                    >Hide Terminal</button>
                   </div>
                 </details>
                 <details class="menu-group">
@@ -264,7 +306,13 @@ __INLINE_CSS__
               <section class="panel workspace-utility-panel">
                 <div class="panel-header">
                   <h2>Debug</h2>
-                  <button class="panel-toggle secondary" data-panel-target="debug-viewer" type="button">Hide</button>
+                  <button
+                    class="panel-toggle secondary"
+                    data-panel-target="debug-viewer"
+                    data-show-label="Show"
+                    data-hide-label="Hide"
+                    type="button"
+                  >Hide</button>
                 </div>
                 <div id="debug-viewer" class="debug-viewer"></div>
               </section>
@@ -272,7 +320,13 @@ __INLINE_CSS__
               <section class="panel workspace-utility-panel">
                 <div class="panel-header">
                   <h2>Terminal</h2>
-                  <button class="panel-toggle secondary" data-panel-target="terminal-output" type="button">Hide</button>
+                  <button
+                    class="panel-toggle secondary"
+                    data-panel-target="terminal-output"
+                    data-show-label="Show"
+                    data-hide-label="Hide"
+                    type="button"
+                  >Hide</button>
                 </div>
                 <div id="terminal-output" class="terminal-output"></div>
                 <label class="editor-label">
@@ -297,7 +351,13 @@ __INLINE_CSS__
           <section class="panel">
             <div class="panel-header">
               <h2>Session</h2>
-              <button class="panel-toggle secondary" data-panel-target="notebook-status-panel" type="button">Hide</button>
+              <button
+                class="panel-toggle secondary"
+                data-panel-target="notebook-status-panel"
+                data-show-label="Show"
+                data-hide-label="Hide"
+                type="button"
+              >Hide</button>
             </div>
             <div id="notebook-status-panel" class="notebook-status-panel">
               <div class="meta-card">
@@ -318,7 +378,7 @@ __INLINE_CSS__
               </div>
               <div class="meta-card">
                 <span class="meta-label">Persistence</span>
-                <span class="meta-value" id="save-state">Unsaved</span>
+                <span class="meta-value" id="session-save-state">Unsaved</span>
               </div>
             </div>
           </section>
@@ -326,7 +386,13 @@ __INLINE_CSS__
           <section class="panel">
             <div class="panel-header">
               <h2>Variables</h2>
-              <button class="panel-toggle secondary" data-panel-target="variable-viewer" type="button">Hide</button>
+              <button
+                class="panel-toggle secondary"
+                data-panel-target="variable-viewer"
+                data-show-label="Show"
+                data-hide-label="Hide"
+                type="button"
+              >Hide</button>
             </div>
             <div id="variable-viewer" class="variable-list"></div>
           </section>
@@ -334,7 +400,13 @@ __INLINE_CSS__
           <section class="panel">
             <div class="panel-header">
               <h2>Properties</h2>
-              <button class="panel-toggle secondary" data-panel-target="variable-detail-viewer" type="button">Hide</button>
+              <button
+                class="panel-toggle secondary"
+                data-panel-target="variable-detail-viewer"
+                data-show-label="Show"
+                data-hide-label="Hide"
+                type="button"
+              >Hide</button>
             </div>
             <div id="variable-detail-viewer" class="variable-detail-viewer"></div>
           </section>
@@ -342,7 +414,13 @@ __INLINE_CSS__
           <section class="panel">
             <div class="panel-header">
               <h2>Watch</h2>
-              <button class="panel-toggle secondary" data-panel-target="watch-viewer" type="button">Hide</button>
+              <button
+                class="panel-toggle secondary"
+                data-panel-target="watch-viewer"
+                data-show-label="Show"
+                data-hide-label="Hide"
+                type="button"
+              >Hide</button>
             </div>
             <div class="button-row">
               <button id="add-watch" class="secondary">Add Watch</button>
@@ -353,7 +431,13 @@ __INLINE_CSS__
           <section class="panel">
             <div class="panel-header">
               <h2>Help</h2>
-              <button class="panel-toggle secondary" data-panel-target="help-support-panel" type="button">Hide</button>
+              <button
+                class="panel-toggle secondary"
+                data-panel-target="help-support-panel"
+                data-show-label="Show"
+                data-hide-label="Hide"
+                type="button"
+              >Hide</button>
             </div>
             <div id="help-support-panel">
               <p class="panel-copy">
