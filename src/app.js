@@ -2512,7 +2512,7 @@ function quickOpenEntries() {
       type: "command",
       id: "open-console",
       label: "Open Console",
-      description: "Focus the Python console in the inspector rail",
+      description: "Reveal and focus the Python console",
     },
     ...notebookState.workspace.notebooks.map((notebook) => ({
       type: "notebook",
@@ -2598,7 +2598,7 @@ function executeQuickOpenEntry(entry) {
       return;
     }
     if (entry.id === "open-console") {
-      document.getElementById("terminal-input")?.focus();
+      openConsole();
       return;
     }
     return;
@@ -2660,6 +2660,19 @@ function openQuickOpen() {
   dialog.showModal();
   input.value = "";
   input.focus();
+}
+
+function showPanel(panelId) {
+  if (!panelId) {
+    return;
+  }
+  notebookState.panelVisibility[panelId] = false;
+  applyPanelVisibility();
+}
+
+function openConsole() {
+  showPanel("terminal-output");
+  document.getElementById("terminal-input")?.focus();
 }
 
 function applyPanelVisibility() {
@@ -4353,7 +4366,7 @@ function wireEvents() {
     .getElementById("launcher-open-terminal")
     .addEventListener("click", () => {
       openLauncher();
-      document.getElementById("terminal-input").focus();
+      openConsole();
     });
   document
     .getElementById("launcher-run-runtime-check")
