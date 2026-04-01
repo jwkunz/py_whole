@@ -3953,11 +3953,18 @@ function duplicateCell(cellId) {
 
 function deleteCell(cellId) {
   const notebook = activeNotebook();
-  if (!notebook || notebook.cells.length === 1) {
+  if (!notebook) {
+    return;
+  }
+
+  const index = notebook.cells.findIndex((cell) => cell.id === cellId);
+  if (index < 0) {
     return;
   }
 
   notebook.cells = notebook.cells.filter((cell) => cell.id !== cellId);
+  const fallbackCell = notebook.cells[index] || notebook.cells[index - 1] || null;
+  notebookState.focusedCellId = fallbackCell ? fallbackCell.id : null;
   notebook.updatedAt = new Date().toISOString();
   renderNotebook();
   scheduleAutosave();
