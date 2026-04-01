@@ -89,6 +89,17 @@ const MIN_INSPECTOR_WIDTH = 228;
 const MIN_CENTER_WIDTH = 520;
 const LAYOUT_RESIZER_SIZE = 10;
 
+function setSplashStatus(message) {
+  const statusNode = document.getElementById("app-splash-status");
+  if (statusNode) {
+    statusNode.textContent = String(message || "");
+  }
+}
+
+function hideSplashScreen() {
+  document.getElementById("app-splash")?.classList.add("is-hidden");
+}
+
 function codeMirrorAvailable() {
   return typeof globalThis.CodeMirror === "function";
 }
@@ -5694,8 +5705,9 @@ function clearRecovery() {
   updateSaveState("Recovery cleared");
 }
 
-function bootstrap() {
+async function bootstrap() {
   hideClientError();
+  setSplashStatus("Restoring workspace...");
   renderPackageList();
   renderRuntimeDiagnostics();
   loadNotebookFromStorage();
@@ -5711,6 +5723,7 @@ function bootstrap() {
   if (workspaceFileFilterInput) {
     workspaceFileFilterInput.value = notebookState.filters.files;
   }
+  setSplashStatus("Rendering workspace...");
   applyLayoutSizing();
   syncNotebookTitle();
   renderNotebook();
@@ -5723,21 +5736,24 @@ function bootstrap() {
   wireEvents();
   applyPanelVisibility();
   if (EMBEDDED_PYODIDE.available) {
+    setSplashStatus("Preparing offline Python runtime...");
     updateKernelState("Initializing embedded runtime");
-    window.setTimeout(() => {
-      runtimeAdapter.initialize().catch((error) => {
-        updateKernelState(`Runtime initialization failed: ${String(error.message || error)}`);
-      });
-    }, 0);
+    try {
+      await runtimeAdapter.initialize();
+    } catch (error) {
+      updateKernelState(`Runtime initialization failed: ${String(error.message || error)}`);
+    }
   } else {
     updateKernelState("Runtime bundle missing");
   }
   syncExecutionUi();
+  setSplashStatus("Workspace ready.");
+  await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+  hideSplashScreen();
 }
 
 installGlobalErrorHandlers();
-try {
-  bootstrap();
-} catch (error) {
+bootstrap().catch((error) => {
   reportClientError(error, "Application bootstrap failed");
-}
+  hideSplashScreen();
+});
