@@ -1091,6 +1091,18 @@ button.danger {
   font-weight: 600;
 }
 
+.workspace-status-strip #kernel-state.is-ready {
+  color: #7ee08e;
+}
+
+.workspace-status-strip #kernel-state.is-loading {
+  color: #e9bc62;
+}
+
+.workspace-status-strip #kernel-state.is-error {
+  color: #ff857a;
+}
+
 .active-cell-toolbar {
   display: flex;
   align-items: center;

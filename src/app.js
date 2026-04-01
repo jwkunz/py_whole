@@ -1168,6 +1168,30 @@ function updateKernelState(text) {
   const node = document.getElementById("kernel-state");
   if (node) {
     node.textContent = text;
+    const normalized = String(text || "").toLowerCase();
+    let stateClass = "is-error";
+    if (normalized.includes("runtime ready")) {
+      stateClass = "is-ready";
+    } else if (
+      normalized.includes("loading")
+      || normalized.includes("initializing")
+      || normalized.includes("running")
+      || normalized.includes("interrupt requested")
+      || normalized.includes("restarting")
+    ) {
+      stateClass = "is-loading";
+    } else if (normalized.includes("uninitialized")) {
+      stateClass = "is-error";
+    } else if (
+      normalized.includes("failed")
+      || normalized.includes("missing")
+      || normalized.includes("error")
+      || normalized.includes("interrupted")
+    ) {
+      stateClass = "is-error";
+    }
+    node.classList.remove("is-ready", "is-loading", "is-error");
+    node.classList.add(stateClass);
   }
 }
 
