@@ -2829,37 +2829,16 @@ function selectedWorkspaceFile() {
 function renderWorkspaceFileEditor() {
   const meta = document.getElementById("workspace-file-editor-meta");
   const preview = document.getElementById("workspace-file-preview");
-  const editor = document.getElementById("workspace-file-editor");
-  const saveButton = document.getElementById("save-workspace-file");
-  const revertButton = document.getElementById("revert-workspace-file");
   const file = selectedWorkspaceFile();
 
   if (!file) {
-    meta.textContent = "Select a text file to edit it.";
+    meta.textContent = "Select a file to preview it.";
     preview.replaceChildren();
-    setEditorValue(editor, "");
-    setEditorReadOnly(editor, true);
-    saveButton.disabled = true;
-    revertButton.disabled = true;
     return;
   }
 
   meta.textContent = `${file.path || file.name} • ${formatBytes(file.size)}`;
   preview.replaceChildren(...buildWorkspaceFilePreviewNodes(file));
-
-  if (isLikelyTextFile(file)) {
-    setEditorMode(editor, editorModeForPath(file.path || file.name));
-    setEditorValue(editor, notebookState.workspaceFileDraft);
-    setEditorReadOnly(editor, notebookState.execution.busy);
-    saveButton.disabled = notebookState.execution.busy;
-    revertButton.disabled = notebookState.execution.busy;
-    return;
-  }
-
-  setEditorValue(editor, "");
-  setEditorReadOnly(editor, true);
-  saveButton.disabled = true;
-  revertButton.disabled = true;
 }
 
 function renderMainFileSurface() {
@@ -5033,21 +5012,12 @@ function wireEvents() {
   document
     .getElementById("workspace-file-input")
     .addEventListener("change", importWorkspaceFiles);
-  bindWorkspaceFileEditor("workspace-file-editor");
   bindWorkspaceFileEditor("file-surface-editor");
-  document
-    .getElementById("save-workspace-file")
-    .addEventListener("click", () => {
-      void saveSelectedWorkspaceFile();
-    });
   document
     .getElementById("file-surface-save")
     .addEventListener("click", () => {
       void saveSelectedWorkspaceFile();
     });
-  document
-    .getElementById("revert-workspace-file")
-    .addEventListener("click", revertSelectedWorkspaceFile);
   document
     .getElementById("file-surface-revert")
     .addEventListener("click", revertSelectedWorkspaceFile);
