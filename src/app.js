@@ -4,6 +4,7 @@ const SCIENTIFIC_PACKAGES = [
   "matplotlib",
   "sympy",
   "pandas",
+  "tqdm",
   "opencv",
   "xarray",
   "statsmodels",
@@ -22,6 +23,7 @@ const RUNTIME_DIAGNOSTIC_IMPORTS = [
   ["matplotlib", "matplotlib"],
   ["sympy", "sympy"],
   ["pandas", "pandas"],
+  ["tqdm", "tqdm"],
   ["opencv", "cv2"],
   ["xarray", "xarray"],
   ["statsmodels", "statsmodels"],
@@ -81,7 +83,6 @@ const notebookState = {
 };
 
 let nextCellId = 1;
-let saveTimer = null;
 const EMBEDDED_PYODIDE = globalThis.__PYWHOLE_EMBEDDED_PYODIDE__ || { available: false };
 const BUNDLED_PACKAGE_SET = new Set(EMBEDDED_PYODIDE.bundledPackages || []);
 const WORKSPACE_STORAGE_KEY = "py_whole.workspace.v1";
@@ -1601,9 +1602,7 @@ function createStarterNotebook() {
 }
 
 function scheduleAutosave() {
-  updateSaveState("Pending autosave");
-  window.clearTimeout(saveTimer);
-  saveTimer = window.setTimeout(saveNotebookToStorage, 250);
+  updateSaveState("Unsaved changes");
 }
 
 function syncNotebookTitle() {
@@ -1812,6 +1811,27 @@ function saveNotebookToStorage() {
   updateSaveState(`Saved locally at ${new Date().toLocaleTimeString()}`);
 }
 
+async function saveCurrentWorkspaceState() {
+  const active = activeDocument();
+  if (active?.type === "file") {
+    const file = selectedWorkspaceFile();
+    if (
+      file
+      && isLikelyTextFile(file)
+      && notebookState.workspaceFileDraft !== decodeBase64ToText(file.base64)
+    ) {
+      await saveSelectedWorkspaceFile();
+      return;
+    }
+  }
+
+  saveNotebookToStorage();
+}
+
+function persistDestructiveChange() {
+  saveNotebookToStorage();
+}
+
 function loadNotebookFromStorage() {
   const raw = localStorage.getItem(WORKSPACE_STORAGE_KEY);
   if (!raw) {
@@ -1837,7 +1857,7 @@ function loadNotebookFromStorage() {
   }
 }
 
-function applyImportedNotebook(document, titleHint) {
+function applyImportedNotebook(document, titleHint, options = {}) {
   const importedCells = Array.isArray(document.cells) ? document.cells : [];
   const notebook = createNotebookRecord(stripNotebookExtension(titleHint || "Imported"));
   notebook.cells = importedCells.length
@@ -1859,10 +1879,15 @@ function applyImportedNotebook(document, titleHint) {
     : [createCodeCell("print('new notebook')")];
   notebook.updatedAt = new Date().toISOString();
   notebookState.workspace.notebooks.push(notebook);
-  syncNotebookWorkspaceFile(notebook, normalizeNotebookWorkspacePath(`${notebook.title}.ipynb`));
+  const linkedFile = syncNotebookWorkspaceFile(
+    notebook,
+    normalizeNotebookWorkspacePath(options.preferredPath || `${notebook.title}.ipynb`),
+  );
   notebookState.workspace.activeNotebookId = notebook.id;
   notebookState.workspace.activeDocument = { type: "notebook", id: notebook.id };
+  notebookState.selectedWorkspaceFileId = linkedFile?.id || null;
   syncNotebookTitle();
+  return notebook;
 }
 
 function applyWorkspaceState(state) {
@@ -2048,6 +2073,8 @@ function packageImportSnippet(packageName) {
       return "import numpy as np";
     case "pandas":
       return "import pandas as pd";
+    case "tqdm":
+      return "from tqdm import tqdm";
     case "matplotlib":
       return "import matplotlib.pyplot as plt";
     case "opencv":
@@ -2071,6 +2098,8 @@ function packageDemoSnippet(packageName) {
       return "import sympy as sp\n\nx = sp.symbols('x')\nsp.factor(x**2 - 1)";
     case "pandas":
       return "import pandas as pd\n\ndf = pd.DataFrame({'time': [0, 1, 2], 'value': [1.2, 2.4, 3.1]})\ndf.describe()";
+    case "tqdm":
+      return "from tqdm import tqdm\n\nfor index in tqdm(range(5)):\n    print(f'step {index}')\n\n'done'";
     case "opencv":
       return "import cv2\n\ncv2.__version__";
     case "xarray":
@@ -3224,7 +3253,7 @@ function renderWatchViewer(results) {
       deleteButton.addEventListener("click", () => {
         notebookState.watches.splice(index, 1);
         renderWatchViewer([]);
-        scheduleAutosave();
+        persistDestructiveChange();
       });
 
       actions.append(refreshButton, deleteButton);
@@ -4094,7 +4123,7 @@ function deleteCell(cellId) {
   notebookState.focusedCellId = fallbackCell ? fallbackCell.id : null;
   notebook.updatedAt = new Date().toISOString();
   renderNotebook();
-  scheduleAutosave();
+  persistDestructiveChange();
 }
 
 function clearCellOutput(cellId) {
@@ -4856,6 +4885,11 @@ function wireEvents() {
     if (handleGlobalDebugShortcut(event)) {
       return;
     }
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      void saveCurrentWorkspaceState();
+      return;
+    }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
       event.preventDefault();
       openQuickOpen();
@@ -4956,7 +4990,7 @@ function createNewNotebook() {
   notebookState.workspace.activeDocument = { type: "notebook", id: notebook.id };
   syncNotebookTitle();
   renderNotebook();
-  scheduleAutosave();
+  persistDestructiveChange();
 }
 
 async function saveSelectedWorkspaceFile() {
@@ -4981,7 +5015,7 @@ async function saveSelectedWorkspaceFile() {
   }
 
   renderWorkspaceFiles();
-  scheduleAutosave();
+  saveNotebookToStorage();
 }
 
 function revertSelectedWorkspaceFile() {
@@ -5209,31 +5243,49 @@ async function saveSelectedWorkspaceFileAs() {
   selectWorkspaceFile(record.id);
   updateSaveState(`Saved as ${record.path}`);
   renderNotebook();
-  scheduleAutosave();
+  saveNotebookToStorage();
 }
 
-function deleteActiveNotebook() {
+function deleteNotebookById(notebookId) {
   if (notebookState.workspace.notebooks.length <= 1) {
     return;
   }
-  const activeNotebookRecord = activeNotebook();
-  const linkedFileId = activeNotebookRecord?.fileId || null;
-  const currentId = notebookState.workspace.activeNotebookId;
+  const notebook = notebookState.workspace.notebooks.find((entry) => entry.id === notebookId);
+  if (!notebook) {
+    return;
+  }
+
+  const linkedFileId = notebook.fileId || null;
   notebookState.workspace.notebooks = notebookState.workspace.notebooks.filter(
-    (notebook) => notebook.id !== currentId,
+    (entry) => entry.id !== notebookId,
   );
   if (linkedFileId) {
     notebookState.workspace.files = notebookState.workspace.files.filter((file) => file.id !== linkedFileId);
   }
-  notebookState.workspace.activeNotebookId = notebookState.workspace.notebooks[0].id;
-  notebookState.selectedWorkspaceFileId = notebookState.workspace.notebooks[0].fileId || null;
-  notebookState.workspace.activeDocument = {
-    type: "notebook",
-    id: notebookState.workspace.activeNotebookId,
-  };
+
+  if (notebookState.workspace.activeNotebookId === notebookId) {
+    notebookState.workspace.activeNotebookId = notebookState.workspace.notebooks[0].id;
+  }
+  if (notebookState.selectedWorkspaceFileId === linkedFileId) {
+    notebookState.selectedWorkspaceFileId = activeNotebook()?.fileId || null;
+  }
+  if (
+    notebookState.workspace.activeDocument?.type === "notebook"
+    && notebookState.workspace.activeDocument.id === notebookId
+  ) {
+    notebookState.workspace.activeDocument = {
+      type: "notebook",
+      id: notebookState.workspace.activeNotebookId,
+    };
+  }
+
   syncNotebookTitle();
   renderNotebook();
-  scheduleAutosave();
+  persistDestructiveChange();
+}
+
+function deleteActiveNotebook() {
+  deleteNotebookById(notebookState.workspace.activeNotebookId);
 }
 
 function exportNotebook() {
@@ -5262,8 +5314,6 @@ async function importNotebook(event) {
     const text = await file.text();
     const document = JSON.parse(text);
     applyImportedNotebook(document, file.name);
-    const notebook = activeNotebook();
-    notebookState.selectedWorkspaceFileId = notebook?.fileId || null;
     renderNotebook();
     scheduleAutosave();
   } catch (error) {
@@ -5281,8 +5331,21 @@ async function importWorkspaceFiles(event) {
 
   let lastImportedOpenableFileId = null;
   for (const file of files) {
-    const bytes = new Uint8Array(await file.arrayBuffer());
     const relativePath = normalizeWorkspacePath(file.webkitRelativePath || file.name);
+    const isNotebookFile = relativePath.toLowerCase().endsWith(".ipynb");
+    if (isNotebookFile) {
+      try {
+        const text = await file.text();
+        const document = JSON.parse(text);
+        const notebook = applyImportedNotebook(document, file.name, { preferredPath: relativePath });
+        lastImportedOpenableFileId = notebook.fileId || lastImportedOpenableFileId;
+      } catch (error) {
+        updateSaveState(`Notebook import failed for ${relativePath}: ${String(error.message || error)}`);
+      }
+      continue;
+    }
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
     const existingIndex = notebookState.workspace.files.findIndex(
       (entry) => (entry.path || entry.name) === relativePath,
     );
@@ -5335,6 +5398,11 @@ async function deleteWorkspaceFile(fileId) {
   if (!file) {
     return;
   }
+  const linkedNotebook = notebookForFileId(fileId);
+  if (linkedNotebook) {
+    deleteNotebookById(linkedNotebook.id);
+    return;
+  }
   notebookState.workspace.files = notebookState.workspace.files.filter((entry) => entry.id !== fileId);
   if (runtimeAdapter.pyodide) {
     try {
@@ -5343,7 +5411,7 @@ async function deleteWorkspaceFile(fileId) {
     }
   }
   renderNotebook();
-  scheduleAutosave();
+  persistDestructiveChange();
 }
 
 function createWorkspaceFolder() {

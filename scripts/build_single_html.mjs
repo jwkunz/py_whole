@@ -90,6 +90,7 @@ function loadBundledPackages(projectRoot) {
     "scipy-1.14.1-cp313-cp313-pyodide_2025_0_wasm32.whl": "scipy",
     "six-1.17.0-py2.py3-none-any.whl": "six",
     "sympy-1.13.3-py3-none-any.whl": "sympy",
+    "tqdm-4.67.1-py3-none-any.whl": "tqdm",
   };
 
   const names = [];
