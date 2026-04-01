@@ -15,9 +15,15 @@ const appJs = fs.readFileSync(path.join(srcDir, "app.js"), "utf8");
 const runtime = loadEmbeddedRuntime(rootDir);
 const editorAssets = loadEmbeddedEditorAssets(rootDir);
 const logoDataUri = loadInlineLogo(rootDir);
+const faviconSvgDataUri = loadInlineSvgFavicon();
+const faviconDataUri = loadInlineFavicon(rootDir);
+const faviconIcoDataUri = loadInlineFaviconIco(rootDir);
 
 const html = template
   .replaceAll("__INLINE_LOGO_DATA__", logoDataUri)
+  .replaceAll("__INLINE_FAVICON_SVG_DATA__", faviconSvgDataUri)
+  .replaceAll("__INLINE_FAVICON_DATA__", faviconDataUri)
+  .replaceAll("__INLINE_FAVICON_ICO_DATA__", faviconIcoDataUri)
   .replace("__INLINE_EDITOR_CSS__", editorAssets.css)
   .replace("__INLINE_CSS__", css)
   .replace("__INLINE_RUNTIME_BOOTSTRAP__", runtime.bootstrap)
@@ -75,6 +81,40 @@ function loadInlineLogo(projectRoot) {
   }
   const base64 = fs.readFileSync(logoPath).toString("base64");
   return `data:image/png;base64,${base64}`;
+}
+
+function loadInlineFavicon(projectRoot) {
+  const faviconPath = path.join(projectRoot, "py_whole_favicon.png");
+  if (!fs.existsSync(faviconPath)) {
+    return loadInlineLogo(projectRoot);
+  }
+  const base64 = fs.readFileSync(faviconPath).toString("base64");
+  return `data:image/png;base64,${base64}`;
+}
+
+function loadInlineSvgFavicon() {
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="pywhole-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2f6fed" />
+      <stop offset="100%" stop-color="#15326f" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#pywhole-grad)" />
+  <path d="M20 16h17c7.2 0 12 4.4 12 11.2 0 5.2-2.9 9-7.9 10.3L49 49H39.6l-6.6-10.3h-4.4V49H20V16zm8.6 7.2v8.5h7c3.1 0 5-1.6 5-4.3 0-2.7-1.9-4.2-5-4.2h-7z" fill="#ffffff"/>
+  <circle cx="47.5" cy="47.5" r="5.5" fill="#f4b400" />
+</svg>`.trim();
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+function loadInlineFaviconIco(projectRoot) {
+  const faviconPath = path.join(projectRoot, "py_whole_favicon.ico");
+  if (!fs.existsSync(faviconPath)) {
+    return loadInlineFavicon(projectRoot);
+  }
+  const base64 = fs.readFileSync(faviconPath).toString("base64");
+  return `data:image/x-icon;base64,${base64}`;
 }
 
 function loadBundledPackages(projectRoot) {
