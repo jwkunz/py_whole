@@ -74,8 +74,8 @@ const notebookState = {
   workspace: {
     activeNotebookId: null,
     activeDocument: {
-      type: "launcher",
-      id: "launcher",
+      type: "notebook",
+      id: null,
     },
     files: [],
     notebooks: [],
@@ -1430,7 +1430,6 @@ function syncExecutionUi() {
     document.getElementById("toolbar-run-active-cell"),
     document.getElementById("toolbar-run-all"),
     document.getElementById("toolbar-clear-outputs"),
-    document.getElementById("menu-open-launcher"),
     document.getElementById("menu-new-notebook"),
     document.getElementById("menu-import-notebook"),
     document.getElementById("menu-export-notebook"),
@@ -1508,7 +1507,6 @@ function syncExecutionUi() {
     );
   });
   renderWorkspaceFileEditor();
-  updateActiveCellToolbar();
 }
 
 function beginExecution(cellId, options = {}) {
@@ -1654,7 +1652,10 @@ function isLinkedNotebookFile(file) {
 }
 
 function activeDocument() {
-  return notebookState.workspace.activeDocument || { type: "launcher", id: "launcher" };
+  return notebookState.workspace.activeDocument || {
+    type: "notebook",
+    id: notebookState.workspace.activeNotebookId,
+  };
 }
 
 function createCodeCell(source, output = "") {
@@ -2076,10 +2077,15 @@ function applyWorkspaceState(state) {
     state.activeNotebookId && notebookState.workspace.notebooks.some((entry) => entry.id === state.activeNotebookId)
       ? state.activeNotebookId
       : notebookState.workspace.notebooks[0].id;
-  notebookState.workspace.activeDocument = state.activeDocument || {
-    type: "launcher",
-    id: "launcher",
-  };
+  const savedActiveDocument = state.activeDocument;
+  if (savedActiveDocument?.type === "file") {
+    notebookState.workspace.activeDocument = savedActiveDocument;
+  } else {
+    notebookState.workspace.activeDocument = {
+      type: "notebook",
+      id: notebookState.workspace.activeNotebookId,
+    };
+  }
 }
 
 function hydrateNotebookRecord(entry) {
@@ -2494,11 +2500,6 @@ function renderDocumentTabs() {
 
   const active = activeDocument();
   const tabs = [
-    {
-      type: "launcher",
-      id: "launcher",
-      label: "Launcher",
-    },
     ...notebookState.workspace.notebooks.map((notebook) => ({
       type: "notebook",
       id: notebook.id,
@@ -2560,8 +2561,6 @@ function setActiveDocument(type, id) {
   if (type === "notebook") {
     notebookState.workspace.activeNotebookId = id;
     syncNotebookTitle();
-  } else if (type === "launcher") {
-    syncNotebookTitle();
   } else if (type === "file") {
     notebookState.selectedWorkspaceFileId = id;
   }
@@ -2576,8 +2575,8 @@ function closeActiveFileTab(fileId) {
   notebookState.selectedWorkspaceFileId = null;
   notebookState.workspaceFileDraft = "";
   notebookState.workspace.activeDocument = {
-    type: "launcher",
-    id: "launcher",
+    type: "notebook",
+    id: notebookState.workspace.activeNotebookId,
   };
   renderNotebook();
   scheduleAutosave();
@@ -2903,12 +2902,6 @@ function quickOpenEntries() {
   return [
     {
       type: "command",
-      id: "launcher",
-      label: "Launcher",
-      description: "Open the launcher surface",
-    },
-    {
-      type: "command",
       id: "new-notebook",
       label: "New Notebook",
       description: "Create a fresh notebook",
@@ -3012,10 +3005,6 @@ function quickOpenEntries() {
 
 function executeQuickOpenEntry(entry) {
   if (entry.type === "command") {
-    if (entry.id === "launcher") {
-      setActiveDocument("launcher", "launcher");
-      return;
-    }
     if (entry.id === "new-notebook") {
       createNewNotebook();
       return;
@@ -3037,7 +3026,6 @@ function executeQuickOpenEntry(entry) {
       return;
     }
     if (entry.id === "run-runtime-check") {
-      setActiveDocument("launcher", "launcher");
       void runRuntimeDiagnostics();
       return;
     }
@@ -3848,7 +3836,6 @@ function renderNotebook() {
     return;
   }
   const active = activeDocument();
-  const launcherSurface = document.getElementById("launcher-surface");
   const notebookSurface = document.getElementById("notebook-surface");
   const fileSurface = document.getElementById("file-surface");
   const eyebrow = document.getElementById("workspace-eyebrow");
@@ -3860,13 +3847,11 @@ function renderNotebook() {
   renderDocumentTabs();
   renderMainFileSurface();
 
-  const showingLauncher = active.type === "launcher";
   const showingFile = active.type === "file";
-  const showingNotebook = !showingLauncher && !showingFile;
-  launcherSurface.classList.toggle("is-hidden", !showingLauncher);
+  const showingNotebook = !showingFile;
   notebookSurface.classList.toggle("is-hidden", !showingNotebook);
   fileSurface.classList.toggle("is-hidden", !showingFile);
-  eyebrow.textContent = showingLauncher ? "Launcher" : showingFile ? "File" : "Notebook";
+  eyebrow.textContent = showingFile ? "File" : "Notebook";
   titleInput.disabled = !showingNotebook || notebookState.execution.busy || notebookState.debug.active;
 
   cellsRoot.replaceChildren(
@@ -4458,18 +4443,6 @@ function selectedCodeCell(notebook = activeNotebook()) {
   return notebook.cells.find((cell) => cell.cellType === "code") || null;
 }
 
-function updateActiveCellToolbar() {
-  const indicator = document.getElementById("active-cell-indicator");
-  const notebook = activeNotebook();
-  const selected = selectedCodeCell(notebook);
-
-  if (indicator) {
-    indicator.textContent = selected
-      ? `Active cell: ${selected.id} (${selected.status || "Idle"})`
-      : "Active cell: none";
-  }
-}
-
 function renderDebugViewer() {
   const container = document.getElementById("debug-viewer");
   if (!container) {
@@ -4874,10 +4847,6 @@ function wireEvents() {
     }
   };
 
-  const openLauncher = () => {
-    setActiveDocument("launcher", "launcher");
-  };
-
   const openNotebookImportPicker = () => {
     document.getElementById("ipynb-file-input").click();
   };
@@ -4908,7 +4877,6 @@ function wireEvents() {
   bindClick("toolbar-add-code-cell", addCodeCell);
   bindClick("toolbar-add-markdown-cell", addMarkdownCell);
   bindClick("toolbar-clear-outputs", clearAllOutputs);
-  bindClick("menu-open-launcher", openLauncher);
   bindClick("menu-new-notebook", createNewNotebook);
   bindClick("menu-import-notebook", openNotebookImportPicker);
   bindClick("menu-export-notebook", exportNotebook);
@@ -4936,36 +4904,6 @@ function wireEvents() {
   bindClick("menu-copy-runtime-diagnostics", copyRuntimeReportToClipboard);
   bindClick("menu-insert-runtime-report", insertRuntimeReportFromMenu);
 
-  document
-    .getElementById("launcher-new-notebook")
-    .addEventListener("click", createNewNotebook);
-  document
-    .getElementById("launcher-import-notebook")
-    .addEventListener("click", openNotebookImportPicker);
-  document
-    .getElementById("launcher-import-file")
-    .addEventListener("click", openWorkspaceFilePicker);
-  document
-    .getElementById("launcher-open-terminal")
-    .addEventListener("click", () => {
-      openLauncher();
-      openConsole();
-    });
-  document
-    .getElementById("launcher-run-runtime-check")
-    .addEventListener("click", () => {
-      openLauncher();
-      void runRuntimeDiagnostics();
-    });
-  document
-    .getElementById("launcher-insert-runtime-report")
-    .addEventListener("click", insertRuntimeReportFromMenu);
-  document
-    .getElementById("launcher-copy-runtime-report")
-    .addEventListener("click", () => {
-      openLauncher();
-      copyRuntimeReportToClipboard();
-    });
   bindClick("clear-all-outputs", clearAllOutputs);
   document
     .getElementById("run-runtime-diagnostics")

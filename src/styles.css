@@ -1103,27 +1103,6 @@ button.danger {
   color: #ff857a;
 }
 
-.active-cell-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-top: 0.8rem;
-  padding-top: 0.8rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.active-cell-indicator {
-  color: #c8d6e4;
-  font-size: 0.8rem;
-  font-family: var(--mono);
-}
-
-.active-cell-meta {
-  color: var(--muted);
-  font-size: 0.8rem;
-}
-
 .workspace-subtitle {
   margin: 0;
   color: var(--muted);
@@ -1705,8 +1684,7 @@ button.danger {
     flex-direction: column;
   }
 
-  .notebook-menubar,
-  .active-cell-toolbar {
+  .notebook-menubar {
     flex-direction: column;
     align-items: flex-start;
   }
