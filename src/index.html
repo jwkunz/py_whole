@@ -188,13 +188,6 @@ __INLINE_CSS__
                     >Hide Inspector</button>
                     <button
                       class="menu-action secondary panel-toggle"
-                      data-panel-target="watch-viewer"
-                      data-show-label="Show Watch"
-                      data-hide-label="Hide Watch"
-                      type="button"
-                    >Hide Watch</button>
-                    <button
-                      class="menu-action secondary panel-toggle"
                       data-panel-target="debug-viewer"
                       data-show-label="Show Debug"
                       data-hide-label="Hide Debug"
@@ -267,20 +260,6 @@ __INLINE_CSS__
             </section>
 
             <section class="workspace-utility-panels">
-              <section class="panel workspace-utility-panel">
-                <div class="panel-header">
-                  <h2>Debug</h2>
-                  <button
-                    class="panel-toggle secondary"
-                    data-panel-target="debug-viewer"
-                    data-show-label="Show"
-                    data-hide-label="Hide"
-                    type="button"
-                  >Hide</button>
-                </div>
-                <div id="debug-viewer" class="debug-viewer"></div>
-              </section>
-
               <section class="panel workspace-utility-panel">
                 <div class="panel-header">
                   <h2>Terminal</h2>
@@ -385,19 +364,16 @@ __INLINE_CSS__
 
           <section class="panel">
             <div class="panel-header">
-              <h2>Watch</h2>
+              <h2>Debug</h2>
               <button
                 class="panel-toggle secondary"
-                data-panel-target="watch-viewer"
+                data-panel-target="debug-viewer"
                 data-show-label="Show"
                 data-hide-label="Hide"
                 type="button"
               >Hide</button>
             </div>
-            <div class="button-row">
-              <button id="add-watch" class="secondary">Add Watch</button>
-            </div>
-            <div id="watch-viewer" class="watch-list"></div>
+            <div id="debug-viewer" class="debug-viewer"></div>
           </section>
 
           <section class="panel">

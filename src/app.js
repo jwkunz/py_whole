@@ -39,7 +39,6 @@ const notebookState = {
   selectedWorkspaceFileId: null,
   workspaceFileDraft: "",
   terminalEntries: [],
-  watches: [],
   filters: {
     files: "",
   },
@@ -56,7 +55,15 @@ const notebookState = {
   },
   debug: {
     active: false,
+    status: "idle",
+    reason: "",
     pausedCellId: null,
+    pausedLine: null,
+    currentLocationLabel: "",
+    frames: [],
+    selectedFrameIndex: 0,
+    breakpointsByCell: {},
+    note: "",
     history: [],
   },
   execution: {
@@ -81,6 +88,7 @@ const EMBEDDED_PYODIDE = globalThis.__PYWHOLE_EMBEDDED_PYODIDE__ || { available:
 const BUNDLED_PACKAGE_SET = new Set(EMBEDDED_PYODIDE.bundledPackages || []);
 const WORKSPACE_STORAGE_KEY = "py_whole.workspace.v1";
 const DEFAULT_PRELOADED_PACKAGES = ["numpy"];
+const DEBUG_FILENAME_PREFIX = "pywhole://notebook/";
 const DEFAULT_LAYOUT = {
   sidebarWidth: 232,
   inspectorWidth: 264,
@@ -150,6 +158,26 @@ function bundledPackageNameForImport(moduleName) {
     default:
       return rootModule;
   }
+}
+
+function debugFilenameForCell(notebookId, cellId) {
+  return `${DEBUG_FILENAME_PREFIX}${encodeURIComponent(notebookId || "active")}/cell/${cellId}.py`;
+}
+
+function parseDebugFilename(filename) {
+  const value = String(filename || "");
+  if (!value.startsWith(DEBUG_FILENAME_PREFIX)) {
+    return null;
+  }
+  const remainder = value.slice(DEBUG_FILENAME_PREFIX.length);
+  const match = remainder.match(/^([^/]+)\/cell\/(\d+)\.py$/);
+  if (!match) {
+    return null;
+  }
+  return {
+    notebookId: decodeURIComponent(match[1]),
+    cellId: Number(match[2]),
+  };
 }
 
 function pyodidePackageName(packageName) {
@@ -573,6 +601,8 @@ const runtimeAdapter = {
   runCellFn: null,
   initializePromise: null,
   loadedPackages: new Set(),
+  debugStateFn: null,
+  resetDebugStateFn: null,
 
   async initialize() {
     if (this.initializePromise) {
@@ -600,6 +630,7 @@ const runtimeAdapter = {
         stderr: () => {},
       });
       await this.installNotebookHelpers();
+      await this.resetDebugState();
       await this.syncWorkspaceFiles();
       await this.ensurePackagesLoaded(DEFAULT_PRELOADED_PACKAGES);
       notebookState.runtimeReady = true;
@@ -807,6 +838,40 @@ json.dumps(results)
     renderPackageList();
   },
 
+  async fetchDebugState() {
+    if (!this.pyodide) {
+      return null;
+    }
+    if (!this.debugStateFn) {
+      this.debugStateFn = this.pyodide.globals.get("_pywhole_get_debug_state");
+    }
+    const proxy = this.debugStateFn();
+    try {
+      return proxy?.toJs ? proxy.toJs() : proxy;
+    } finally {
+      if (proxy && typeof proxy.destroy === "function") {
+        proxy.destroy();
+      }
+    }
+  },
+
+  async resetDebugState() {
+    if (!this.pyodide) {
+      return null;
+    }
+    if (!this.resetDebugStateFn) {
+      this.resetDebugStateFn = this.pyodide.globals.get("_pywhole_reset_debug_state");
+    }
+    const proxy = this.resetDebugStateFn();
+    try {
+      return proxy?.toJs ? proxy.toJs() : proxy;
+    } finally {
+      if (proxy && typeof proxy.destroy === "function") {
+        proxy.destroy();
+      }
+    }
+  },
+
   async installNotebookHelpers() {
     this.pyodide.registerJsModule("pywhole_bridge", {
       push_output_json(payloadJson) {
@@ -987,6 +1052,30 @@ def _pywhole_run_cell(source):
 
 _pywhole_patch_matplotlib()
 
+def _pywhole_debug_empty_state():
+    return {
+        "status": "idle",
+        "reason": "",
+        "paused": False,
+        "paused_cell_id": None,
+        "paused_line": None,
+        "current_location_label": "",
+        "frames": [],
+        "selected_frame_index": 0,
+        "breakpoints": [],
+        "note": "",
+    }
+
+_pywhole_debug_state = _pywhole_debug_empty_state()
+
+def _pywhole_get_debug_state():
+    return _pywhole_debug_state
+
+def _pywhole_reset_debug_state():
+    global _pywhole_debug_state
+    _pywhole_debug_state = _pywhole_debug_empty_state()
+    return _pywhole_debug_state
+
 def _pywhole_list_variables():
     namespace = __main__.__dict__
     variables = []
@@ -1077,25 +1166,6 @@ def _pywhole_inspect_variable(name):
         "detail": detail,
     }
 
-def _pywhole_evaluate_watch(expression):
-    namespace = __main__.__dict__
-    try:
-        value = eval(expression, namespace, namespace)
-        value_type = type(value).__name__
-        value_repr = repr(value)
-        if len(value_repr) > 160:
-            value_repr = value_repr[:157] + "..."
-        return {
-            "ok": True,
-            "type": value_type,
-            "value": value_repr,
-        }
-    except Exception as exc:
-        return {
-            "ok": False,
-            "type": type(exc).__name__,
-            "value": str(exc),
-        }
 `);
   },
 
@@ -1163,28 +1233,6 @@ def _pywhole_evaluate_watch(expression):
     }
   },
 
-  async evaluateWatch(expression) {
-    if (!this.pyodide) {
-      return {
-        ok: false,
-        type: "RuntimeError",
-        value: "Runtime is not initialized.",
-      };
-    }
-
-    const watchFn = this.pyodide.globals.get("_pywhole_evaluate_watch");
-    const proxy = watchFn(expression);
-    try {
-      return proxy.toJs ? proxy.toJs() : proxy;
-    } finally {
-      if (proxy && typeof proxy.destroy === "function") {
-        proxy.destroy();
-      }
-      if (watchFn && typeof watchFn.destroy === "function") {
-        watchFn.destroy();
-      }
-    }
-  },
 };
 
 function normalizeDisplayOutputs(items) {
@@ -1649,7 +1697,6 @@ function syncExecutionUi() {
     document.getElementById("menu-run-runtime-diagnostics"),
     document.getElementById("menu-copy-runtime-diagnostics"),
     document.getElementById("menu-insert-runtime-report"),
-    document.getElementById("add-watch"),
     document.getElementById("run-runtime-diagnostics"),
     document.getElementById("notebook-title-input"),
     document.getElementById("run-terminal-command"),
@@ -2172,7 +2219,6 @@ function saveNotebookToStorage() {
       notebook: buildIpynbDocumentForNotebook(notebook),
     })),
     panelVisibility: notebookState.panelVisibility,
-    watches: notebookState.watches,
   };
   localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(payload));
   updateSaveState(`Saved locally at ${new Date().toLocaleTimeString()}`);
@@ -2271,7 +2317,6 @@ function applyWorkspaceState(state) {
       ? state.panelVisibility
       : {};
   notebookState.workspace.files = Array.isArray(state.files) ? state.files : [];
-  notebookState.watches = Array.isArray(state.watches) ? state.watches : [];
   notebookState.workspace.notebooks = notebooks.length
     ? notebooks.map((entry) => hydrateNotebookRecord(entry))
     : [createStarterNotebook()];
@@ -3154,14 +3199,6 @@ function quickOpenEntries() {
       label: "Run Selected Package Demo",
       description: `Create and run a demo cell for ${notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0]}`,
     },
-    ...(notebookState.selectedVariableName
-      ? [{
-          type: "command",
-          id: "watch-selected-variable",
-          label: "Watch Selected Variable",
-          description: `Add ${notebookState.selectedVariableName} to the watch panel`,
-        }]
-      : []),
     ...(selectedWorkspaceFile()
       ? [{
           type: "command",
@@ -3244,10 +3281,6 @@ function executeQuickOpenEntry(entry) {
     }
     if (entry.id === "run-selected-package-demo") {
       void runSelectedPackageDemo();
-      return;
-    }
-    if (entry.id === "watch-selected-variable") {
-      addWatchExpression(notebookState.selectedVariableName);
       return;
     }
     if (entry.id === "duplicate-selected-file") {
@@ -3460,26 +3493,13 @@ function renderVariableViewer(variables) {
       value.className = "variable-value";
       value.textContent = variable.value;
 
-      const actions = document.createElement("div");
-      actions.className = "variable-actions";
-
-      const watchButton = document.createElement("button");
-      watchButton.type = "button";
-      watchButton.className = "secondary";
-      watchButton.textContent = "Add Watch";
-      watchButton.addEventListener("click", (event) => {
-        event.stopPropagation();
-        addWatchExpression(variable.name);
-      });
-      actions.append(watchButton);
-
       item.addEventListener("click", () => {
         notebookState.selectedVariableName = variable.name;
         renderVariableViewer(variables);
         void refreshVariableDetail();
       });
 
-      item.append(name, type, value, actions);
+      item.append(name, type, value);
       return item;
     }),
   );
@@ -3540,90 +3560,6 @@ function renderVariableDetail(detail) {
   container.replaceChildren(...cards);
 }
 
-function renderWatchViewer(results) {
-  const container = document.getElementById("watch-viewer");
-  if (!notebookState.watches.length) {
-    const empty = document.createElement("div");
-    empty.className = "watch-item";
-    empty.textContent = "No watch expressions yet.";
-    container.replaceChildren(empty);
-    return;
-  }
-
-  container.replaceChildren(
-    ...notebookState.watches.map((watch, index) => {
-      const item = document.createElement("div");
-      item.className = "watch-item";
-
-      const input = document.createElement("input");
-      input.className = "watch-input";
-      input.type = "text";
-      input.value = watch.expression;
-      input.placeholder = "expression";
-      input.addEventListener("input", (event) => {
-        notebookState.watches[index].expression = event.target.value;
-        scheduleAutosave();
-      });
-
-      const result = document.createElement("span");
-      result.className = "watch-result";
-      const current = results[index];
-      if (!watch.expression.trim()) {
-        result.textContent = "Enter an expression to evaluate.";
-      } else if (!notebookState.runtimeReady) {
-        result.textContent = "Initialize runtime to evaluate watches.";
-      } else if (!current) {
-        result.textContent = "No result.";
-      } else {
-        result.textContent = `${current.type}: ${current.value}`;
-      }
-
-      const actions = document.createElement("div");
-      actions.className = "watch-actions";
-
-      const refreshButton = document.createElement("button");
-      refreshButton.type = "button";
-      refreshButton.className = "secondary";
-      refreshButton.textContent = "Refresh";
-      refreshButton.addEventListener("click", () => refreshWatchViewer());
-
-      const deleteButton = document.createElement("button");
-      deleteButton.type = "button";
-      deleteButton.className = "danger";
-      deleteButton.textContent = "Delete";
-      deleteButton.addEventListener("click", () => {
-        notebookState.watches.splice(index, 1);
-        renderWatchViewer([]);
-        persistDestructiveChange();
-      });
-
-      actions.append(refreshButton, deleteButton);
-      item.append(input, result, actions);
-      return item;
-    }),
-  );
-}
-
-function addWatchExpression(expression) {
-  const normalized = String(expression || "").trim();
-  if (!normalized) {
-    return;
-  }
-
-  const existing = notebookState.watches.find((watch) => watch.expression.trim() === normalized);
-  if (existing) {
-    void refreshWatchViewer();
-    updateSaveState(`Watch already exists: ${normalized}`);
-    return;
-  }
-
-  notebookState.watches.push({ expression: normalized });
-  renderWatchViewer([]);
-  scheduleAutosave();
-  void refreshWatchViewer();
-  updateSaveState(`Added watch: ${normalized}`);
-}
-
 async function refreshVariableViewer() {
   if (!runtimeAdapter.pyodide || !notebookState.runtimeReady) {
     renderVariableViewer([]);
@@ -3655,36 +3591,6 @@ async function refreshVariableDetail() {
   } catch (_error) {
     renderVariableDetail(null);
   }
-}
-
-async function refreshWatchViewer() {
-  if (!notebookState.watches.length) {
-    renderWatchViewer([]);
-    return;
-  }
-
-  if (!runtimeAdapter.pyodide || !notebookState.runtimeReady) {
-    renderWatchViewer([]);
-    return;
-  }
-
-  const results = [];
-  for (const watch of notebookState.watches) {
-    if (!watch.expression.trim()) {
-      results.push(null);
-      continue;
-    }
-    try {
-      results.push(await runtimeAdapter.evaluateWatch(watch.expression));
-    } catch (error) {
-      results.push({
-        ok: false,
-        type: "Error",
-        value: String(error.message || error),
-      });
-    }
-  }
-  renderWatchViewer(results);
 }
 
 function flattenOutputsToText(outputs) {
@@ -3779,7 +3685,6 @@ async function runTerminalCommand() {
     });
     updateKernelState("Runtime ready");
     await refreshVariableViewer();
-    await refreshWatchViewer();
   } catch (error) {
     notebookState.terminalEntries.push({
       label: "Error",
@@ -4965,7 +4870,6 @@ async function executeCodeCell(cell, notebook, options = {}) {
   renderNotebook();
   try {
     await refreshVariableViewer();
-    await refreshWatchViewer();
   } catch (error) {
     updateKernelState(`Post-run refresh error: ${String(error.message || error)}`);
   }
@@ -5352,13 +5256,6 @@ function wireEvents() {
   bindClick("rename-notebook", renameActiveNotebook);
   bindClick("duplicate-notebook", duplicateActiveNotebook);
   bindClick("delete-notebook", deleteActiveNotebook);
-  document
-    .getElementById("add-watch")
-    .addEventListener("click", () => {
-      notebookState.watches.push({ expression: "" });
-      renderWatchViewer([]);
-      scheduleAutosave();
-    });
   document
     .getElementById("run-terminal-command")
     .addEventListener("click", runTerminalCommand);
@@ -5972,7 +5869,6 @@ async function bootstrap() {
   loadNotebookFromStorage();
   if (!Object.keys(notebookState.panelVisibility || {}).length) {
     notebookState.panelVisibility = {
-      "watch-viewer": true,
       "debug-viewer": true,
       "terminal-output": true,
       "help-support-panel": true,
@@ -5988,7 +5884,6 @@ async function bootstrap() {
   renderNotebook();
   renderVariableViewer([]);
   renderVariableDetail(null);
-  renderWatchViewer([]);
   renderDebugViewer();
   renderWorkspaceFileEditor();
   renderTerminalOutput();
