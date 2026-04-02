@@ -5,7 +5,14 @@ import { fileURLToPath } from "node:url";
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const srcDir = path.join(rootDir, "src");
 const distDir = path.join(rootDir, "dist");
-const outFile = path.join(distDir, "py_whole.html");
+const outputFileName = process.env.PY_WHOLE_OUTPUT_NAME || "py_whole.html";
+const bundledPackageFilter = new Set(
+  String(process.env.PY_WHOLE_BUNDLED_PACKAGES || "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean),
+);
+const outFile = path.join(distDir, outputFileName);
 
 fs.mkdirSync(distDir, { recursive: true });
 
@@ -55,7 +62,7 @@ function loadEmbeddedRuntime(projectRoot) {
   const lockFileText = fs.readFileSync(path.join(pyodideDir, "pyodide-lock.json"), "utf8");
   const wasmBase64 = fs.readFileSync(path.join(pyodideDir, "pyodide.asm.wasm")).toString("base64");
   const stdlibBase64 = fs.readFileSync(path.join(pyodideDir, "python_stdlib.zip")).toString("base64");
-  const packageAssets = loadBundledPackages(projectRoot);
+  const packageAssets = loadBundledPackages(projectRoot, bundledPackageFilter);
 
   const manifest = {
     available: true,
@@ -125,7 +132,7 @@ function loadInlineFaviconIco(projectRoot) {
   return `data:image/x-icon;base64,${base64}`;
 }
 
-function loadBundledPackages(projectRoot) {
+function loadBundledPackages(projectRoot, packageFilter = new Set()) {
   const packagesDir = path.join(projectRoot, "vendor", "pyodide", "packages-0.28.2");
   if (!fs.existsSync(packagesDir)) {
     return {
@@ -175,6 +182,9 @@ function loadBundledPackages(projectRoot) {
   const files = {};
 
   for (const [fileName, packageName] of Object.entries(fileToPackageName)) {
+    if (packageFilter.size && !packageFilter.has(packageName)) {
+      continue;
+    }
     const assetPath = path.join(packagesDir, fileName);
     if (!fs.existsSync(assetPath)) {
       continue;
