@@ -1427,12 +1427,57 @@ button.danger {
 
 .editor-stack {
   position: relative;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
   width: 100%;
   min-height: 164px;
   border: 1px solid var(--editor-border);
   border-radius: 4px;
   background: var(--editor-bg);
   overflow: hidden;
+}
+
+.editor-gutter {
+  display: grid;
+  align-content: start;
+  border-right: 1px solid rgba(186, 203, 220, 0.14);
+  background: rgba(255, 255, 255, 0.018);
+  padding: 0.85rem 0 0.85rem 0.35rem;
+  overflow: hidden;
+}
+
+.gutter-line {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--gutter-text);
+  box-shadow: none;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1.45;
+  min-height: 1.334rem;
+  padding: 0 0.55rem 0 0.25rem;
+  text-align: right;
+  justify-content: flex-end;
+}
+
+.gutter-line:hover {
+  transform: none;
+  background: rgba(124, 195, 255, 0.06);
+}
+
+.gutter-line.has-breakpoint {
+  color: #ffd29a;
+}
+
+.gutter-line.is-paused {
+  background: rgba(124, 195, 255, 0.12);
+  color: #d9ecff;
+}
+
+.gutter-line.has-breakpoint.is-paused {
+  color: #fff0c9;
 }
 
 .editor-stack:focus-within {
@@ -1454,7 +1499,7 @@ button.danger {
 
 .syntax-highlight {
   position: absolute;
-  inset: 0;
+  inset: 0 0 0 56px;
   z-index: 0;
   margin: 0;
   pointer-events: none;

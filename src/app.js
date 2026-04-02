@@ -181,6 +181,26 @@ function parseDebugFilename(filename) {
   };
 }
 
+function breakpointLinesForCell(cellId) {
+  const lines = notebookState.debug.breakpointsByCell?.[cellId];
+  if (!Array.isArray(lines)) {
+    return [];
+  }
+  return Array.from(new Set(lines.filter((line) => Number.isInteger(line) && line > 0))).sort((a, b) => a - b);
+}
+
+function cellHasBreakpoints(cellId) {
+  return breakpointLinesForCell(cellId).length > 0;
+}
+
+function currentEditorLineNumber(textarea) {
+  if (!textarea) {
+    return 1;
+  }
+  const prefix = textarea.value.slice(0, textarea.selectionStart || 0);
+  return prefix.split("\n").length;
+}
+
 function pyodidePackageName(packageName) {
   switch (packageName) {
     case "opencv":
@@ -346,6 +366,38 @@ function updateSyntaxHighlight(textarea) {
   return highlighter;
 }
 
+function renderEditorGutter(textarea, cellId, options = {}) {
+  const highlighter = syntaxHighlightInstance(textarea);
+  const gutter = highlighter?.gutter;
+  if (!gutter || !Number.isInteger(cellId)) {
+    return;
+  }
+  const lines = Math.max(1, String(textarea.value || "").split("\n").length);
+  const breakpointLines = new Set(breakpointLinesForCell(cellId));
+  const pausedLine = notebookState.debug.pausedCellId === cellId ? notebookState.debug.pausedLine : null;
+  const currentLine = currentEditorLineNumber(textarea);
+  gutter.replaceChildren(
+    ...Array.from({ length: lines }, (_, index) => {
+      const lineNumber = index + 1;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "gutter-line";
+      button.textContent = String(lineNumber);
+      button.disabled = Boolean(notebookState.execution.busy && !notebookState.debug.active);
+      button.classList.toggle("has-breakpoint", breakpointLines.has(lineNumber));
+      button.classList.toggle("is-paused", Number.isFinite(pausedLine) && pausedLine === lineNumber);
+      button.classList.toggle("is-current", !notebookState.debug.active && currentLine === lineNumber);
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleLineBreakpoint(cellId, lineNumber);
+        textarea.focus();
+      });
+      return button;
+    }),
+  );
+}
+
 function ensureSyntaxHighlight(textarea, options = {}) {
   if (!textarea) {
     return null;
@@ -353,11 +405,13 @@ function ensureSyntaxHighlight(textarea, options = {}) {
   if (!textarea.classList.contains("syntax-editor")) {
     const wrapper = document.createElement("div");
     wrapper.className = "editor-stack";
+    const gutter = document.createElement("div");
+    gutter.className = "editor-gutter";
     const overlay = document.createElement("pre");
     overlay.className = "syntax-highlight";
     overlay.setAttribute("aria-hidden", "true");
     textarea.parentNode?.insertBefore(wrapper, textarea);
-    wrapper.append(overlay, textarea);
+    wrapper.append(gutter, overlay, textarea);
     textarea.classList.add("syntax-editor");
     textarea.addEventListener("focus", () => {
       wrapper.classList.add("is-editing");
@@ -374,6 +428,7 @@ function ensureSyntaxHighlight(textarea, options = {}) {
   if (!textarea._pywholeSyntaxHighlight) {
     textarea._pywholeSyntaxHighlight = {
       mode: null,
+      gutter: textarea.parentNode?.querySelector(".editor-gutter"),
       overlay: textarea.parentNode?.querySelector(".syntax-highlight"),
     };
   }
@@ -381,6 +436,7 @@ function ensureSyntaxHighlight(textarea, options = {}) {
   const highlighter = textarea._pywholeSyntaxHighlight;
   highlighter.mode = options.mode || highlighter.mode || null;
   updateSyntaxHighlight(textarea);
+  renderEditorGutter(textarea, options.cellId, options);
   return highlighter;
 }
 
@@ -1755,7 +1811,7 @@ function breakpointCellsForNotebook(notebook = activeNotebook()) {
   if (!notebook) {
     return [];
   }
-  return notebook.cells.filter((cell) => cell.cellType === "code" && cell.breakpoint);
+  return notebook.cells.filter((cell) => cell.cellType === "code" && cellHasBreakpoints(cell.id));
 }
 
 function debugLocationLabel(cell, lineNumber = null) {
@@ -1909,7 +1965,7 @@ function syncExecutionUi() {
   document.querySelectorAll(".cell").forEach((cellNode) => {
     const cellId = Number(cellNode.dataset.cellId);
     cellNode.classList.toggle("is-running", busy && currentCellId === cellId);
-    cellNode.classList.toggle("has-breakpoint", cellNode.dataset.breakpoint === "true");
+    cellNode.classList.toggle("has-breakpoint", cellHasBreakpoints(cellId));
     cellNode.classList.toggle(
       "is-debug-paused",
       notebookState.debug.active && notebookState.debug.pausedCellId === cellId,
@@ -2100,7 +2156,7 @@ function cloneCell(cell) {
   return {
     id: nextCellId++,
     cellType: cell.cellType,
-    breakpoint: Boolean(cell.breakpoint),
+    breakpoint: false,
     source: cell.source,
     rendered: cell.cellType === "markdown" ? Boolean(cell.rendered) : false,
     outputs: (cell.outputs || []).map((output) => ({ ...output })),
@@ -2201,7 +2257,6 @@ function buildIpynbDocument(notebook = activeNotebook()) {
       execution_count: cell.cellType === "code" ? cell.executionCount : null,
       metadata: {
         py_whole: {
-          breakpoint: Boolean(cell.breakpoint),
           rendered: cell.cellType === "markdown" ? Boolean(cell.rendered) : undefined,
         },
       },
@@ -2440,7 +2495,7 @@ function applyImportedNotebook(document, titleHint, options = {}) {
     ? importedCells.map((cell) => ({
         id: nextCellId++,
         cellType: cell.cell_type === "markdown" ? "markdown" : "code",
-        breakpoint: Boolean(cell.metadata?.py_whole?.breakpoint),
+        breakpoint: false,
         source: joinNotebookSource(cell.source),
         rendered: cell.cell_type === "markdown" ? Boolean(cell.metadata?.py_whole?.rendered) : false,
         outputs: parseOutputs(cell.outputs),
@@ -2511,7 +2566,7 @@ function hydrateNotebookRecord(entry) {
     ? importedCells.map((cell) => ({
         id: nextCellId++,
         cellType: cell.cell_type === "markdown" ? "markdown" : "code",
-        breakpoint: Boolean(cell.metadata?.py_whole?.breakpoint),
+        breakpoint: false,
         source: joinNotebookSource(cell.source),
         rendered: cell.cell_type === "markdown" ? Boolean(cell.metadata?.py_whole?.rendered) : false,
         outputs: parseOutputs(cell.outputs),
@@ -4136,9 +4191,10 @@ function renderNotebook() {
       const deleteButton = fragment.querySelector(".delete-cell");
       const moveUpButton = fragment.querySelector(".move-up");
       const moveDownButton = fragment.querySelector(".move-down");
+      const hasBreakpoints = cellHasBreakpoints(cell.id);
 
       article.dataset.cellId = String(cell.id);
-      article.dataset.breakpoint = String(Boolean(cell.breakpoint));
+      article.dataset.breakpoint = String(hasBreakpoints);
       article.addEventListener("click", (event) => {
         const target = event.target;
         if (
@@ -4173,7 +4229,7 @@ function renderNotebook() {
       article.classList.toggle("is-next-up", Boolean(nextRunnableCell) && nextRunnableCell.id === cell.id);
       kindNode.textContent = cell.cellType === "markdown" ? "Markdown" : "Code";
       const statusParts = [cell.status];
-      if (cell.breakpoint) {
+      if (hasBreakpoints) {
         statusParts.push("Breakpoint");
       }
       if (notebookState.debug.active && notebookState.debug.pausedCellId === cell.id) {
@@ -4199,7 +4255,10 @@ function renderNotebook() {
       }
       renderCellOutputs(outputList, cell.outputs);
       toggleKindButton.addEventListener("click", () => toggleCellType(cell.id));
-      breakpointButton.addEventListener("click", () => toggleBreakpoint(cell.id));
+      breakpointButton.addEventListener("click", () => {
+        const liveEditor = cellsRoot.querySelector(`.cell[data-cell-id="${cell.id}"] .cell-editor`);
+        toggleLineBreakpoint(cell.id, currentEditorLineNumber(liveEditor));
+      });
       insertBelowButton.addEventListener("click", () => insertCellBelow(cell.id));
       duplicateButton.addEventListener("click", () => duplicateCell(cell.id));
       debugButton.addEventListener("click", () => {
@@ -4253,7 +4312,7 @@ function renderNotebook() {
       clearOutputButton.disabled = cell.cellType !== "code" || controlsLocked;
       toggleKindButton.disabled = controlsLocked;
       breakpointButton.disabled = cell.cellType !== "code" || controlsLocked;
-      breakpointButton.textContent = cell.breakpoint ? "Breakpoint On" : "Breakpoint";
+      breakpointButton.textContent = hasBreakpoints ? "Breakpoint On" : "Breakpoint";
       insertBelowButton.disabled = controlsLocked;
       duplicateButton.disabled = controlsLocked;
       debugButton.disabled = cell.cellType !== "code" || controlsLocked;
@@ -4308,9 +4367,14 @@ function renderNotebook() {
         }
 
         ensureSyntaxHighlight(liveEditor, {
+          cellId: cell.id,
+          controlsLocked,
           mode: editorModeForCell(cell),
         });
         liveEditor.addEventListener("focus", handleEditorFocus);
+        liveEditor.addEventListener("click", () => {
+          renderEditorGutter(liveEditor, cell.id, { controlsLocked });
+        });
         liveEditor.addEventListener("keydown", (event) => {
           if (event.key === "Escape") {
             event.preventDefault();
@@ -4336,6 +4400,10 @@ function renderNotebook() {
         });
         liveEditor.addEventListener("input", (event) => {
           handleEditorInput(event.target.value);
+          renderEditorGutter(liveEditor, cell.id, { controlsLocked });
+        });
+        liveEditor.addEventListener("keyup", () => {
+          renderEditorGutter(liveEditor, cell.id, { controlsLocked });
         });
       });
 
@@ -4929,7 +4997,7 @@ function renderDebugViewer() {
     {
       title: "Breakpoints",
       body: breakpointCells.length
-        ? breakpointCells.map((cell) => debugLocationLabel(cell)).join("\n")
+        ? breakpointCells.flatMap((cell) => breakpointLinesForCell(cell.id).map((line) => debugLocationLabel(cell, line))).join("\n")
         : "No breakpoints set",
     },
     {
@@ -5114,20 +5182,30 @@ function resolveDebugStartCell(notebook, preferredCellId = notebookState.focused
   return notebook.cells.find((cell) => cell.cellType === "code") || null;
 }
 
-function toggleBreakpoint(cellId) {
+function toggleLineBreakpoint(cellId, lineNumber) {
   const notebook = activeNotebook();
   const cell = notebook && notebook.cells.find((entry) => entry.id === cellId);
-  if (!cell || cell.cellType !== "code" || notebookState.execution.busy) {
+  if (!cell || cell.cellType !== "code" || notebookState.execution.busy || !Number.isInteger(lineNumber) || lineNumber < 1) {
     return;
   }
 
-  cell.breakpoint = !cell.breakpoint;
-  pushDebugHistory(
-    `${cell.breakpoint ? "Enabled" : "Disabled"} breakpoint for cell ${cell.id}`,
-  );
+  const existing = breakpointLinesForCell(cellId);
+  const next = existing.includes(lineNumber)
+    ? existing.filter((entry) => entry !== lineNumber)
+    : [...existing, lineNumber].sort((a, b) => a - b);
+  if (next.length) {
+    notebookState.debug.breakpointsByCell[cellId] = next;
+  } else {
+    delete notebookState.debug.breakpointsByCell[cellId];
+  }
+  cell.breakpoint = next.length > 0;
   notebook.updatedAt = new Date().toISOString();
   renderNotebook();
-  scheduleAutosave();
+}
+
+function toggleBreakpoint(cellId) {
+  const editor = document.querySelector(`.cell[data-cell-id="${cellId}"] .cell-editor`);
+  toggleLineBreakpoint(cellId, currentEditorLineNumber(editor));
 }
 
 async function startDebugSession(preferredCellId = notebookState.focusedCellId) {
