@@ -85,6 +85,7 @@ const notebookState = {
 
 let nextCellId = 1;
 const EMBEDDED_PYODIDE = globalThis.__PYWHOLE_EMBEDDED_PYODIDE__ || { available: false };
+const RUNTIME_WORKER_SOURCE = globalThis.__PYWHOLE_RUNTIME_WORKER_SOURCE__ || "";
 const BUNDLED_PACKAGE_SET = new Set(EMBEDDED_PYODIDE.bundledPackages || []);
 const WORKSPACE_STORAGE_KEY = "py_whole.workspace.v1";
 const DEFAULT_PRELOADED_PACKAGES = ["numpy"];
@@ -598,11 +599,63 @@ function installGlobalErrorHandlers() {
 
 const runtimeAdapter = {
   pyodide: null,
+  worker: null,
+  workerUrl: "",
+  requestId: 0,
+  pendingRequests: new Map(),
   runCellFn: null,
   initializePromise: null,
   loadedPackages: new Set(),
+  syncedWorkspacePaths: new Set(),
   debugStateFn: null,
   resetDebugStateFn: null,
+
+  useWorkerRuntime() {
+    return Boolean(RUNTIME_WORKER_SOURCE);
+  },
+
+  async ensureWorker() {
+    if (!this.useWorkerRuntime()) {
+      return null;
+    }
+    if (this.worker) {
+      return this.worker;
+    }
+    this.workerUrl = URL.createObjectURL(new Blob([RUNTIME_WORKER_SOURCE], { type: "text/javascript" }));
+    this.worker = new Worker(this.workerUrl);
+    this.worker.addEventListener("message", (event) => {
+      const { id, ok, result, error } = event.data || {};
+      const pending = this.pendingRequests.get(id);
+      if (!pending) {
+        return;
+      }
+      this.pendingRequests.delete(id);
+      if (ok) {
+        pending.resolve(result);
+      } else {
+        pending.reject(new Error(String(error || "Worker request failed")));
+      }
+    });
+    this.worker.addEventListener("error", (event) => {
+      this.pendingRequests.forEach(({ reject }) => {
+        reject(event.error || new Error(event.message || "Runtime worker error"));
+      });
+      this.pendingRequests.clear();
+    });
+    return this.worker;
+  },
+
+  async callWorker(type, payload = {}) {
+    const worker = await this.ensureWorker();
+    if (!worker) {
+      throw new Error("Runtime worker is not available.");
+    }
+    const id = ++this.requestId;
+    return new Promise((resolve, reject) => {
+      this.pendingRequests.set(id, { resolve, reject });
+      worker.postMessage({ id, type, payload });
+    });
+  },
 
   async initialize() {
     if (this.initializePromise) {
@@ -617,22 +670,30 @@ const runtimeAdapter = {
     }
 
     this.initializePromise = (async () => {
-      if (!EMBEDDED_PYODIDE.available || typeof globalThis.loadPyodide !== "function") {
-        throw new Error("Embedded Pyodide runtime assets are not available in this build.");
-      }
-
       updateKernelState("Loading embedded Pyodide");
-      installPyodideAssetFetch();
-      this.pyodide = await globalThis.loadPyodide({
-        indexURL: EMBEDDED_PYODIDE.indexURL,
-        lockFileURL: EMBEDDED_PYODIDE.lockFileURL,
-        stdout: () => {},
-        stderr: () => {},
-      });
-      await this.installNotebookHelpers();
-      await this.resetDebugState();
-      await this.syncWorkspaceFiles();
-      await this.ensurePackagesLoaded(DEFAULT_PRELOADED_PACKAGES);
+      if (this.useWorkerRuntime()) {
+        const result = await this.callWorker("initialize", {
+          files: notebookState.workspace.files || [],
+          preloadPackages: DEFAULT_PRELOADED_PACKAGES,
+        });
+        this.loadedPackages = new Set(result?.loadedPackages || []);
+        this.pyodide = { worker: true };
+      } else {
+        if (!EMBEDDED_PYODIDE.available || typeof globalThis.loadPyodide !== "function") {
+          throw new Error("Embedded Pyodide runtime assets are not available in this build.");
+        }
+        installPyodideAssetFetch();
+        this.pyodide = await globalThis.loadPyodide({
+          indexURL: EMBEDDED_PYODIDE.indexURL,
+          lockFileURL: EMBEDDED_PYODIDE.lockFileURL,
+          stdout: () => {},
+          stderr: () => {},
+        });
+        await this.installNotebookHelpers();
+        await this.resetDebugState();
+        await this.syncWorkspaceFiles();
+        await this.ensurePackagesLoaded(DEFAULT_PRELOADED_PACKAGES);
+      }
       notebookState.runtimeReady = true;
       await refreshVariableViewer();
       updateKernelState(
@@ -658,6 +719,11 @@ const runtimeAdapter = {
   async runDiagnostics() {
     if (!this.pyodide || !notebookState.runtimeReady) {
       throw new Error("Runtime is not initialized.");
+    }
+    if (this.useWorkerRuntime()) {
+      return this.callWorker("runDiagnostics", {
+        checks: RUNTIME_DIAGNOSTIC_IMPORTS,
+      });
     }
     await this.ensurePackagesLoaded([
       "numpy",
@@ -783,6 +849,18 @@ json.dumps(results)
         "Runtime is not initialized. Click 'Initialize Runtime' before running cells.",
       );
     }
+    if (this.useWorkerRuntime()) {
+      const result = await this.callWorker("execute", { source });
+      const outputs = [];
+      if (result?.stdout?.length) {
+        outputs.push(createStreamOutput(result.stdout.join("\n"), "stdout"));
+      }
+      outputs.push(...normalizeDisplayOutputs(result?.displayOutputs || []));
+      if (result?.stderr?.length) {
+        outputs.push(createStreamOutput(result.stderr.join("\n"), "stderr"));
+      }
+      return outputs.length ? outputs : [createStreamOutput("Execution completed with no textual output.", "stdout")];
+    }
 
     const stdout = [];
     const stderr = [];
@@ -828,10 +906,15 @@ json.dumps(results)
     }
 
     updateKernelState(`Loading package${pendingPackages.length === 1 ? "" : "s"}: ${pendingPackages.join(", ")}`);
-    await this.pyodide.loadPackage(pendingPackages.map(pyodidePackageName));
-    pendingPackages.forEach((packageName) => {
-      this.loadedPackages.add(packageName);
-    });
+    if (this.useWorkerRuntime()) {
+      const result = await this.callWorker("ensurePackagesLoaded", { packageNames: pendingPackages });
+      this.loadedPackages = new Set(result?.loadedPackages || []);
+    } else {
+      await this.pyodide.loadPackage(pendingPackages.map(pyodidePackageName));
+      pendingPackages.forEach((packageName) => {
+        this.loadedPackages.add(packageName);
+      });
+    }
     updateKernelState(
       `Runtime ready (Pyodide ${EMBEDDED_PYODIDE.version}, loaded: ${Array.from(this.loadedPackages).sort().join(", ")})`,
     );
@@ -841,6 +924,9 @@ json.dumps(results)
   async fetchDebugState() {
     if (!this.pyodide) {
       return null;
+    }
+    if (this.useWorkerRuntime()) {
+      return this.callWorker("fetchDebugState");
     }
     if (!this.debugStateFn) {
       this.debugStateFn = this.pyodide.globals.get("_pywhole_get_debug_state");
@@ -858,6 +944,9 @@ json.dumps(results)
   async resetDebugState() {
     if (!this.pyodide) {
       return null;
+    }
+    if (this.useWorkerRuntime()) {
+      return this.callWorker("resetDebugState");
     }
     if (!this.resetDebugStateFn) {
       this.resetDebugStateFn = this.pyodide.globals.get("_pywhole_reset_debug_state");
@@ -1173,8 +1262,24 @@ def _pywhole_inspect_variable(name):
     if (!this.pyodide) {
       return;
     }
+    if (this.useWorkerRuntime()) {
+      await this.callWorker("syncWorkspaceFiles", {
+        files: notebookState.workspace.files || [],
+      });
+      return;
+    }
 
     const files = notebookState.workspace.files || [];
+    const nextPaths = new Set(files.map((file) => `/workspace/${file.path || file.name}`));
+    for (const previousPath of this.syncedWorkspacePaths) {
+      if (nextPaths.has(previousPath)) {
+        continue;
+      }
+      try {
+        this.pyodide.FS.unlink(previousPath);
+      } catch (_error) {
+      }
+    }
     this.pyodide.FS.mkdirTree("/workspace");
     for (const file of files) {
       const bytes = decodeBase64ToUint8Array(file.base64);
@@ -1186,11 +1291,15 @@ def _pywhole_inspect_variable(name):
       }
       this.pyodide.FS.writeFile(path, bytes);
     }
+    this.syncedWorkspacePaths = nextPaths;
   },
 
   async listVariables() {
     if (!this.pyodide) {
       return [];
+    }
+    if (this.useWorkerRuntime()) {
+      return this.callWorker("listVariables");
     }
 
     const listingFn = this.pyodide.globals.get("_pywhole_list_variables");
@@ -1217,6 +1326,9 @@ def _pywhole_inspect_variable(name):
         detail_kind: "text",
         detail: "",
       };
+    }
+    if (this.useWorkerRuntime()) {
+      return this.callWorker("inspectVariable", { name });
     }
 
     const inspectFn = this.pyodide.globals.get("_pywhole_inspect_variable");
@@ -1486,24 +1598,12 @@ function applyWorkspaceFilePath(file, nextPath) {
     return false;
   }
 
-  const previousAbsolutePath = `/workspace/${file.path || file.name}`;
   file.path = normalizedPath;
   file.name = basename(normalizedPath);
   file.updatedAt = new Date().toISOString();
 
   if (runtimeAdapter.pyodide) {
-    const nextAbsolutePath = `/workspace/${file.path || file.name}`;
-    ensureParentDirectories(runtimeAdapter.pyodide.FS, nextAbsolutePath);
-    try {
-      runtimeAdapter.pyodide.FS.writeFile(nextAbsolutePath, decodeBase64ToUint8Array(file.base64));
-      if (nextAbsolutePath !== previousAbsolutePath) {
-        try {
-          runtimeAdapter.pyodide.FS.unlink(previousAbsolutePath);
-        } catch (_error) {
-        }
-      }
-    } catch (_error) {
-    }
+    void runtimeAdapter.syncWorkspaceFiles();
   }
 
   if (notebookState.selectedWorkspaceFileId === file.id && isLikelyTextFile(file)) {
@@ -5409,14 +5509,7 @@ async function saveSelectedWorkspaceFile() {
   file.updatedAt = new Date().toISOString();
 
   if (runtimeAdapter.pyodide) {
-    const bytes = decodeBase64ToUint8Array(file.base64);
-    const absolutePath = `/workspace/${file.path || file.name}`;
-    ensureParentDirectories(runtimeAdapter.pyodide.FS, absolutePath);
-    try {
-      runtimeAdapter.pyodide.FS.unlink(absolutePath);
-    } catch (_error) {
-    }
-    runtimeAdapter.pyodide.FS.writeFile(absolutePath, bytes);
+    await runtimeAdapter.syncWorkspaceFiles();
   }
 
   renderWorkspaceFiles();
@@ -5508,12 +5601,7 @@ function createWorkspaceTextFile() {
   const record = createWorkspaceFile(requestedPath, new TextEncoder().encode(""), "text/plain");
   notebookState.workspace.files.push(record);
   if (runtimeAdapter.pyodide) {
-    const absolutePath = `/workspace/${record.path || record.name}`;
-    ensureParentDirectories(runtimeAdapter.pyodide.FS, absolutePath);
-    try {
-      runtimeAdapter.pyodide.FS.writeFile(absolutePath, new Uint8Array());
-    } catch (_error) {
-    }
+    void runtimeAdapter.syncWorkspaceFiles();
   }
   selectWorkspaceFile(record.id);
   updateSaveState(`Created ${record.path}`);
@@ -5543,12 +5631,7 @@ function duplicateWorkspaceFile(fileId) {
 
   notebookState.workspace.files.push(duplicate);
   if (runtimeAdapter.pyodide) {
-    const absolutePath = `/workspace/${duplicate.path || duplicate.name}`;
-    ensureParentDirectories(runtimeAdapter.pyodide.FS, absolutePath);
-    try {
-      runtimeAdapter.pyodide.FS.writeFile(absolutePath, decodeBase64ToUint8Array(duplicate.base64));
-    } catch (_error) {
-    }
+    void runtimeAdapter.syncWorkspaceFiles();
   }
 
   selectWorkspaceFile(duplicate.id);
@@ -5644,12 +5727,7 @@ async function saveSelectedWorkspaceFileAs() {
   );
   notebookState.workspace.files.push(record);
   if (runtimeAdapter.pyodide) {
-    const absolutePath = `/workspace/${record.path || record.name}`;
-    ensureParentDirectories(runtimeAdapter.pyodide.FS, absolutePath);
-    try {
-      runtimeAdapter.pyodide.FS.writeFile(absolutePath, decodeBase64ToUint8Array(record.base64));
-    } catch (_error) {
-    }
+    void runtimeAdapter.syncWorkspaceFiles();
   }
   selectWorkspaceFile(record.id);
   updateSaveState(`Saved as ${record.path}`);
@@ -5816,10 +5894,7 @@ async function deleteWorkspaceFile(fileId) {
   }
   notebookState.workspace.files = notebookState.workspace.files.filter((entry) => entry.id !== fileId);
   if (runtimeAdapter.pyodide) {
-    try {
-      runtimeAdapter.pyodide.FS.unlink(`/workspace/${file.path || file.name}`);
-    } catch (_error) {
-    }
+    void runtimeAdapter.syncWorkspaceFiles();
   }
   renderNotebook();
   persistDestructiveChange();
@@ -5844,12 +5919,7 @@ function createWorkspaceFolder() {
   }
 
   if (runtimeAdapter.pyodide) {
-    const absolutePath = `/workspace/${placeholderPath}`;
-    ensureParentDirectories(runtimeAdapter.pyodide.FS, absolutePath);
-    try {
-      runtimeAdapter.pyodide.FS.writeFile(absolutePath, new Uint8Array());
-    } catch (_error) {
-    }
+    void runtimeAdapter.syncWorkspaceFiles();
   }
 
   renderNotebook();

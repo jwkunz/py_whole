@@ -12,6 +12,7 @@ fs.mkdirSync(distDir, { recursive: true });
 const template = fs.readFileSync(path.join(srcDir, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(srcDir, "styles.css"), "utf8");
 const appJs = fs.readFileSync(path.join(srcDir, "app.js"), "utf8");
+const workerTemplate = fs.readFileSync(path.join(srcDir, "pyodide_worker.js"), "utf8");
 const runtime = loadEmbeddedRuntime(rootDir);
 const editorAssets = loadEmbeddedEditorAssets(rootDir);
 const logoDataUri = loadInlineLogo(rootDir);
@@ -24,6 +25,11 @@ const html = template
   .replaceAll("__INLINE_FAVICON_SVG_DATA__", faviconSvgDataUri)
   .replaceAll("__INLINE_FAVICON_DATA__", faviconDataUri)
   .replaceAll("__INLINE_FAVICON_ICO_DATA__", faviconIcoDataUri)
+  .replace("__INLINE_RUNTIME_WORKER_SOURCE__", JSON.stringify(
+    workerTemplate
+      .replace("__INLINE_RUNTIME_BOOTSTRAP_WORKER__", runtime.workerBootstrap)
+      .replace("__INLINE_RUNTIME_LOADER__", runtime.loader),
+  ))
   .replace("__INLINE_EDITOR_CSS__", editorAssets.css)
   .replace("__INLINE_CSS__", css)
   .replace("__INLINE_RUNTIME_BOOTSTRAP__", runtime.bootstrap)
@@ -39,6 +45,7 @@ function loadEmbeddedRuntime(projectRoot) {
   if (!fs.existsSync(pyodideDir)) {
     return {
       bootstrap: "window.__PYWHOLE_EMBEDDED_PYODIDE__ = { available: false };",
+      workerBootstrap: "self.__PYWHOLE_EMBEDDED_PYODIDE__ = { available: false };",
       loader: "",
     };
   }
@@ -66,6 +73,7 @@ function loadEmbeddedRuntime(projectRoot) {
 
   return {
     bootstrap: `window.__PYWHOLE_EMBEDDED_PYODIDE__ = ${JSON.stringify(manifest)};`,
+    workerBootstrap: `self.__PYWHOLE_EMBEDDED_PYODIDE__ = ${JSON.stringify(manifest)};`,
     loader: [escapeInlineScript(pyodideJs), escapeInlineScript(pyodideAsmJs)].join("\n"),
   };
 }
