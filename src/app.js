@@ -88,6 +88,8 @@ const MIN_SIDEBAR_WIDTH = 210;
 const MIN_INSPECTOR_WIDTH = 228;
 const MIN_CENTER_WIDTH = 520;
 const LAYOUT_RESIZER_SIZE = 10;
+const MAX_AUTO_LAYOUT_GROWTH = 120;
+const AUTO_LAYOUT_GROWTH_SHARE = 0.35;
 
 function setSplashStatus(message) {
   const statusNode = document.getElementById("app-splash-status");
@@ -446,6 +448,33 @@ function maxInspectorWidth() {
   );
 }
 
+function resolvedLayoutWidths() {
+  const preferredSidebarWidth = clamp(
+    notebookState.layout.sidebarWidth,
+    MIN_SIDEBAR_WIDTH,
+    maxSidebarWidth(),
+  );
+  const preferredInspectorWidth = clamp(
+    notebookState.layout.inspectorWidth,
+    MIN_INSPECTOR_WIDTH,
+    maxInspectorWidth(),
+  );
+  const reservedWidth = preferredSidebarWidth + preferredInspectorWidth + MIN_CENTER_WIDTH + (LAYOUT_RESIZER_SIZE * 2);
+  const extraWidth = Math.max(0, window.innerWidth - reservedWidth);
+  const sideGrowthBudget = Math.min(
+    MAX_AUTO_LAYOUT_GROWTH * 2,
+    Math.round(extraWidth * AUTO_LAYOUT_GROWTH_SHARE),
+  );
+  const preferredTotal = preferredSidebarWidth + preferredInspectorWidth;
+  const sidebarShare = preferredTotal > 0 ? preferredSidebarWidth / preferredTotal : 0.5;
+  const inspectorShare = 1 - sidebarShare;
+
+  return {
+    sidebarWidth: preferredSidebarWidth + Math.round(sideGrowthBudget * sidebarShare),
+    inspectorWidth: preferredInspectorWidth + Math.round(sideGrowthBudget * inspectorShare),
+  };
+}
+
 function applyLayoutSizing() {
   notebookState.layout = normalizedLayout(notebookState.layout);
   notebookState.layout.sidebarWidth = clamp(
@@ -461,11 +490,14 @@ function applyLayoutSizing() {
 
   const appShell = document.querySelector(".app-shell");
   const workspaceShell = document.querySelector(".workspace-shell");
+  const resolvedWidths = resolvedLayoutWidths();
   if (appShell) {
     appShell.style.setProperty("--sidebar-width", `${notebookState.layout.sidebarWidth}px`);
+    appShell.style.setProperty("--sidebar-render-width", `${resolvedWidths.sidebarWidth}px`);
   }
   if (workspaceShell) {
     workspaceShell.style.setProperty("--inspector-width", `${notebookState.layout.inspectorWidth}px`);
+    workspaceShell.style.setProperty("--inspector-render-width", `${resolvedWidths.inspectorWidth}px`);
   }
 }
 

@@ -160,7 +160,7 @@ button.danger {
 
 .app-shell {
   display: grid;
-  grid-template-columns: minmax(210px, var(--sidebar-width)) var(--layout-resizer-size) minmax(0, 1fr);
+  grid-template-columns: minmax(210px, var(--sidebar-render-width, var(--sidebar-width))) var(--layout-resizer-size) minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -173,7 +173,7 @@ button.danger {
 
 .workspace-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--layout-resizer-size) minmax(228px, var(--inspector-width));
+  grid-template-columns: minmax(0, 1fr) var(--layout-resizer-size) minmax(228px, var(--inspector-render-width, var(--inspector-width)));
   min-height: 100vh;
 }
 
@@ -296,8 +296,9 @@ button.danger {
 }
 
 .workspace-main-column {
-  max-width: 1380px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
 }
 
 .workspace-utility-panels {
@@ -1172,6 +1173,7 @@ button.danger {
 }
 
 .file-surface-card {
+  width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--panel);
@@ -1180,6 +1182,7 @@ button.danger {
 }
 
 .notebook-surface {
+  width: 100%;
   padding: 1.15rem 1.4rem 2.4rem;
   border: 1px solid var(--notebook-border);
   border-radius: 22px;
