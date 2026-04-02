@@ -1715,11 +1715,74 @@ function updateSaveState(text) {
   });
 }
 
+function debugStateStatusLabel(status) {
+  switch (status) {
+    case "paused":
+      return "Paused";
+    case "exception":
+      return "Exception Paused";
+    case "running":
+      return "Running";
+    case "completed":
+      return "Completed";
+    default:
+      return "Idle";
+  }
+}
+
+function syncDebugStateFromRuntime(runtimeState) {
+  const nextState = runtimeState && typeof runtimeState === "object" ? runtimeState : {};
+  notebookState.debug.status = String(nextState.status || "idle");
+  notebookState.debug.reason = String(nextState.reason || "");
+  notebookState.debug.active = ["paused", "running", "exception"].includes(notebookState.debug.status);
+  notebookState.debug.pausedCellId = Number.isFinite(nextState.paused_cell_id)
+    ? nextState.paused_cell_id
+    : (Number.isFinite(nextState.pausedCellId) ? nextState.pausedCellId : null);
+  notebookState.debug.pausedLine = Number.isFinite(nextState.paused_line)
+    ? nextState.paused_line
+    : (Number.isFinite(nextState.pausedLine) ? nextState.pausedLine : null);
+  notebookState.debug.currentLocationLabel = String(
+    nextState.current_location_label || nextState.currentLocationLabel || "",
+  );
+  notebookState.debug.frames = Array.isArray(nextState.frames) ? nextState.frames : [];
+  notebookState.debug.selectedFrameIndex = Number.isFinite(nextState.selected_frame_index)
+    ? nextState.selected_frame_index
+    : (Number.isFinite(nextState.selectedFrameIndex) ? nextState.selectedFrameIndex : 0);
+  notebookState.debug.note = String(nextState.note || "");
+}
+
+function breakpointCellsForNotebook(notebook = activeNotebook()) {
+  if (!notebook) {
+    return [];
+  }
+  return notebook.cells.filter((cell) => cell.cellType === "code" && cell.breakpoint);
+}
+
+function debugLocationLabel(cell, lineNumber = null) {
+  if (!cell) {
+    return "No active location";
+  }
+  const lineSuffix = Number.isFinite(lineNumber) ? ` : line ${lineNumber}` : "";
+  const lines = String(cell.source || "").split("\n");
+  const rawLine = Number.isFinite(lineNumber) ? (lines[lineNumber - 1] || "") : (lines[0] || "");
+  const preview = rawLine.trim() || "(blank line)";
+  return `Cell ${cell.id}${lineSuffix}  ${preview}`;
+}
+
 function executionStatusText() {
   const { busy, currentCellId, runAll } = notebookState.execution;
+  if (notebookState.debug.status === "exception" && notebookState.debug.currentLocationLabel) {
+    return notebookState.debug.currentLocationLabel;
+  }
+  if (notebookState.debug.status === "paused" && notebookState.debug.currentLocationLabel) {
+    return notebookState.debug.currentLocationLabel;
+  }
+  if (notebookState.debug.status === "running") {
+    return "Running under debugger";
+  }
   if (!busy) {
     if (notebookState.debug.active && notebookState.debug.pausedCellId) {
-      return `Debug paused at cell ${notebookState.debug.pausedCellId}`;
+      return notebookState.debug.currentLocationLabel || `Debug paused at cell ${notebookState.debug.pausedCellId}`;
     }
     return "Idle";
   }
@@ -4836,66 +4899,61 @@ function renderDebugViewer() {
   }
 
   const notebook = activeNotebook();
-  const breakpointCells = (notebook?.cells || []).filter((cell) => cell.cellType === "code" && cell.breakpoint);
+  const breakpointCells = breakpointCellsForNotebook(notebook);
   const pausedCell = notebook?.cells.find((cell) => cell.id === notebookState.debug.pausedCellId);
-  const nextCell = nextDebuggableCell(notebook, notebookState.debug.pausedCellId);
-  const shortcutHelp = [
-    "F5  Start or continue",
-    "F10 Step",
-    "Shift+F5 Stop",
-  ].join("\n");
-  const actionHelp = notebookState.debug.active && pausedCell
-    ? "Use a cell's 'Run To Here' button to continue directly to that code cell."
-    : "Start a debug session to unlock targeted 'Run To Here' controls.";
-
   const cards = [];
-  for (const [title, body] of [
-    [
-      "State",
-      notebookState.debug.active
-        ? pausedCell
-          ? `Paused at cell ${pausedCell.id}`
-          : "Debug session active"
-        : "Debugger idle",
-    ],
-    [
-      "Current Cell",
-      pausedCell ? formatDebugCellSummary(pausedCell) : "No paused cell.",
-    ],
-    [
-      "Next Cell",
-      nextCell ? formatDebugCellSummary(nextCell) : "No further code cell queued.",
-    ],
-    [
-      "Breakpoints",
-      breakpointCells.length
-        ? breakpointCells.map((cell) => `Cell ${cell.id}  ${cell.status || "Idle"}`).join("\n")
-        : "No breakpoints set.",
-    ],
-    [
-      "Shortcuts",
-      shortcutHelp,
-    ],
-    [
-      "Actions",
-      actionHelp,
-    ],
-    [
-      "History",
-      notebookState.debug.history.length
-        ? notebookState.debug.history.join("\n")
-        : "No debug activity yet.",
-    ],
-  ]) {
-    const card = document.createElement("div");
+  const sections = [
+    {
+      title: "State",
+      body: [
+        debugStateStatusLabel(notebookState.debug.status),
+        notebookState.debug.reason || (notebookState.debug.status === "idle" ? "Debugger idle" : ""),
+        notebookState.debug.note || "",
+      ].filter(Boolean).join("\n"),
+    },
+    {
+      title: "Current Location",
+      body: pausedCell
+        ? (notebookState.debug.currentLocationLabel || debugLocationLabel(pausedCell, notebookState.debug.pausedLine))
+        : "No active location",
+    },
+    {
+      title: "Call Stack",
+      body: notebookState.debug.frames.length
+        ? notebookState.debug.frames.map((frame, index) => {
+            const label = String(frame?.label || frame?.location || "").trim() || `Frame ${index + 1}`;
+            return index === notebookState.debug.selectedFrameIndex ? `> ${label}` : label;
+          }).join("\n")
+        : "No active stack",
+    },
+    {
+      title: "Breakpoints",
+      body: breakpointCells.length
+        ? breakpointCells.map((cell) => debugLocationLabel(cell)).join("\n")
+        : "No breakpoints set",
+    },
+    {
+      title: "Controls",
+      body: [
+        "F5  Start / Continue",
+        "F10 Step Over",
+        "F11 Step Into",
+        "Shift+F5 Stop",
+      ].join("\n"),
+    },
+  ];
+
+  for (const section of sections) {
+    const card = document.createElement("details");
     card.className = "debug-card";
-    const titleNode = document.createElement("span");
-    titleNode.className = "debug-card-title";
-    titleNode.textContent = title;
-    const bodyNode = document.createElement("span");
+    card.open = true;
+    const summary = document.createElement("summary");
+    summary.className = "debug-card-title";
+    summary.textContent = section.title;
+    const bodyNode = document.createElement("div");
     bodyNode.className = "debug-card-body";
-    bodyNode.textContent = body;
-    card.append(titleNode, bodyNode);
+    bodyNode.textContent = section.body;
+    card.append(summary, bodyNode);
     cards.push(card);
   }
 

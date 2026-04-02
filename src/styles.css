@@ -830,21 +830,28 @@ button.danger {
 .debug-card {
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 0.9rem;
   background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
 }
 
 .debug-card-title {
   display: block;
-  margin-bottom: 0.45rem;
+  list-style: none;
+  cursor: pointer;
+  padding: 0.9rem;
   color: var(--muted);
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
 
+.debug-card-title::-webkit-details-marker {
+  display: none;
+}
+
 .debug-card-body {
   display: block;
+  padding: 0 0.9rem 0.9rem;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--mono);
