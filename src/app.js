@@ -80,6 +80,7 @@ let nextCellId = 1;
 const EMBEDDED_PYODIDE = globalThis.__PYWHOLE_EMBEDDED_PYODIDE__ || { available: false };
 const BUNDLED_PACKAGE_SET = new Set(EMBEDDED_PYODIDE.bundledPackages || []);
 const WORKSPACE_STORAGE_KEY = "py_whole.workspace.v1";
+const DEFAULT_PRELOADED_PACKAGES = ["numpy"];
 const DEFAULT_LAYOUT = {
   sidebarWidth: 232,
   inspectorWidth: 264,
@@ -600,13 +601,15 @@ const runtimeAdapter = {
       });
       await this.installNotebookHelpers();
       await this.syncWorkspaceFiles();
+      await this.ensurePackagesLoaded(DEFAULT_PRELOADED_PACKAGES);
       notebookState.runtimeReady = true;
       await refreshVariableViewer();
       updateKernelState(
-        `Runtime ready (Pyodide ${EMBEDDED_PYODIDE.version}, bundled packages load on demand)`,
+        `Runtime ready (Pyodide ${EMBEDDED_PYODIDE.version}, preloaded: ${DEFAULT_PRELOADED_PACKAGES.join(", ")})`,
       );
       syncExecutionUi();
       renderTerminalOutput();
+      renderPackageList();
     })();
 
     try {
@@ -749,7 +752,6 @@ json.dumps(results)
         "Runtime is not initialized. Click 'Initialize Runtime' before running cells.",
       );
     }
-    await this.ensurePackagesForSource(source);
 
     const stdout = [];
     const stderr = [];
@@ -783,11 +785,6 @@ json.dumps(results)
     return outputs.length ? outputs : [createStreamOutput("Execution completed with no textual output.", "stdout")];
   },
 
-  async ensurePackagesForSource(source) {
-    const packageNames = detectBundledPackagesForSource(source);
-    await this.ensurePackagesLoaded(packageNames);
-  },
-
   async ensurePackagesLoaded(packageNames) {
     if (!this.pyodide || !Array.isArray(packageNames) || !packageNames.length) {
       return;
@@ -804,6 +801,10 @@ json.dumps(results)
     pendingPackages.forEach((packageName) => {
       this.loadedPackages.add(packageName);
     });
+    updateKernelState(
+      `Runtime ready (Pyodide ${EMBEDDED_PYODIDE.version}, loaded: ${Array.from(this.loadedPackages).sort().join(", ")})`,
+    );
+    renderPackageList();
   },
 
   async installNotebookHelpers() {
@@ -2491,6 +2492,9 @@ function packageDemoSnippet(packageName) {
 }
 
 function packageStatus(packageName, diagnostic) {
+  if (runtimeAdapter.loadedPackages.has(packageName)) {
+    return diagnostic?.ok ? "bundled-verified" : "loaded";
+  }
   if (diagnostic?.ok) {
     return BUNDLED_PACKAGE_SET.has(packageName) ? "bundled-verified" : "verified";
   }
@@ -2531,6 +2535,8 @@ function packageStatusLabel(status) {
   switch (status) {
     case "bundled-verified":
       return "bundled + verified";
+    case "loaded":
+      return "loaded";
     case "verified":
       return "verified";
     case "missing":
@@ -2544,10 +2550,11 @@ function packageStatusLabel(status) {
 
 function renderPackageDetail() {
   const container = document.getElementById("package-detail");
+  const loadButton = document.getElementById("load-package");
   const copyButton = document.getElementById("copy-package-import");
   const demoButton = document.getElementById("insert-package-demo");
   const runButton = document.getElementById("run-package-demo");
-  if (!container || !copyButton || !demoButton || !runButton) {
+  if (!container || !loadButton || !copyButton || !demoButton || !runButton) {
     return;
   }
 
@@ -2555,6 +2562,8 @@ function renderPackageDetail() {
   notebookState.selectedPackageName = packageName;
   const diagnostic = runtimeDiagnosticByPackageName().get(packageName);
   const status = packageStatus(packageName, diagnostic);
+  const isLoaded = runtimeAdapter.loadedPackages.has(packageName);
+  const isBundled = BUNDLED_PACKAGE_SET.has(packageName);
 
   const card = document.createElement("div");
   card.className = "package-detail-card";
@@ -2570,9 +2579,11 @@ function renderPackageDetail() {
   const detail = document.createElement("pre");
   detail.className = "package-detail-body";
   detail.textContent = diagnostic?.detail
-    || (BUNDLED_PACKAGE_SET.has(packageName)
-      ? "Bundled into the single-file artifact, but not runtime-verified yet."
-      : "Planned package. Not currently bundled into the artifact.");
+    || (isLoaded
+      ? "Loaded into the current runtime session."
+      : (isBundled
+        ? "Bundled into the single-file artifact, but not loaded into the current runtime yet."
+        : "Planned package. Not currently bundled into the artifact."));
 
   const snippet = document.createElement("pre");
   snippet.className = "package-detail-body";
@@ -2580,6 +2591,8 @@ function renderPackageDetail() {
 
   card.append(title, statusNode, detail, snippet);
   container.replaceChildren(card);
+  loadButton.textContent = isLoaded ? "Package Loaded" : "Load Package";
+  loadButton.disabled = !packageName || !isBundled || isLoaded;
   copyButton.disabled = !packageName;
   demoButton.disabled = !packageName;
   runButton.disabled = !packageName || notebookState.execution.busy;
@@ -4342,10 +4355,34 @@ async function runSelectedPackageDemo() {
   notebookState.focusedCellId = cell.id;
   focusCellEditor(cell.id);
   if (!notebookState.runtimeReady) {
-    updateSaveState(`Inserted demo for ${packageName}. Initialize runtime to run it.`);
+    try {
+      await runtimeAdapter.initialize();
+    } catch (error) {
+      updateKernelState(`Runtime initialization failed: ${String(error.message || error)}`);
+      updateSaveState(`Inserted demo for ${packageName}. Initialize runtime to run it.`);
+      return;
+    }
+  }
+  await runtimeAdapter.ensurePackagesLoaded([packageName]);
+  await runCell(cell.id);
+}
+
+async function loadSelectedPackage() {
+  const packageName = notebookState.selectedPackageName || SCIENTIFIC_PACKAGES[0];
+  if (!BUNDLED_PACKAGE_SET.has(packageName)) {
+    updateSaveState(`${packageName} is not bundled in this build`);
     return;
   }
-  await runCell(cell.id);
+  if (!notebookState.runtimeReady) {
+    try {
+      await runtimeAdapter.initialize();
+    } catch (error) {
+      updateKernelState(`Runtime initialization failed: ${String(error.message || error)}`);
+      return;
+    }
+  }
+  await runtimeAdapter.ensurePackagesLoaded([packageName]);
+  updateSaveState(`Loaded ${packageName} into the runtime`);
 }
 
 async function initializeAndRunCell(cellId) {
@@ -5268,6 +5305,11 @@ function wireEvents() {
         focusCellEditor(cell.id);
         updateSaveState("Inserted runtime report");
       }
+    });
+  document
+    .getElementById("load-package")
+    .addEventListener("click", () => {
+      void loadSelectedPackage();
     });
   document
     .getElementById("copy-package-import")
