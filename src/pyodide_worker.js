@@ -585,6 +585,18 @@ const state = {
 
 function configureDebugNotebook(payload = {}) {
   setDebugNotebookManifest(payload);
+  if (activeDebugPlan && Number.isFinite(activeDebugPlan.cellId)) {
+    return updateDebugState({
+      status: debugNotebookManifest.status || "paused",
+      reason: debugNotebookManifest.reason || "Paused",
+      owner_cell_id: activeDebugPlan.cellId,
+      preview_mode: false,
+      paused_cell_id: debugNotebookManifest.pausedCellId ?? activeDebugPlan.cellId,
+      paused_line: debugNotebookManifest.pausedLine ?? activeDebugPlan.statements?.[activeDebugPlan.statementIndex]?.lineno ?? firstExecutableLine(activeDebugPlan.cellId),
+      selected_frame_index: debugNotebookManifest.selectedFrameIndex || 0,
+      note: debugNotebookManifest.note || "Debug runtime updated.",
+    });
+  }
   return updateDebugState({
     status: "idle",
     reason: "",

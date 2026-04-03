@@ -315,7 +315,15 @@ function syncWorkerDebugNotebookManifest(notebook = activeNotebook()) {
   if (!runtimeAdapter.useWorkerRuntime() || !notebookState.runtimeReady || !notebook) {
     return;
   }
-  void runtimeAdapter.configureDebugNotebook(currentNotebookDebugPayload(notebook));
+  void runtimeAdapter.configureDebugNotebook(currentNotebookDebugPayload(notebook)).then((runtimeState) => {
+    if (!notebookState.debug.active || !runtimeState) {
+      return;
+    }
+    syncDebugStateFromRuntime(runtimeState);
+    renderNotebook();
+    renderDebugViewer();
+    void refreshVariableViewer();
+  }).catch(() => {});
 }
 
 function breakpointLinesForCell(cellId) {
