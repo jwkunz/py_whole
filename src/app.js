@@ -1000,14 +1000,14 @@ json.dumps(results)
     return JSON.parse(diagnosticsJson);
   },
 
-  async execute(source) {
+  async execute(source, options = {}) {
     if (!this.pyodide || !notebookState.runtimeReady) {
       throw new Error(
         "Runtime is not initialized. Click 'Initialize Runtime' before running cells.",
       );
     }
     if (this.useWorkerRuntime()) {
-      const result = await this.callWorker("execute", { source });
+      const result = await this.callWorker("execute", { source, options });
       const outputs = [];
       if (result?.stdout?.length) {
         outputs.push(createStreamOutput(result.stdout.join("\n"), "stdout"));
@@ -1033,7 +1033,7 @@ json.dumps(results)
       if (!this.runCellFn) {
         this.runCellFn = this.pyodide.globals.get("_pywhole_run_cell");
       }
-      await this.runCellFn(source);
+      await this.runCellFn(source, String(options.filename || "<py_whole>"));
     } finally {
       this.pyodide.setStdout({ batched: () => {} });
       this.pyodide.setStderr({ batched: () => {} });
@@ -1320,7 +1320,7 @@ def _pywhole_patch_matplotlib():
     except Exception:
         pass
 
-def _pywhole_run_cell(source):
+def _pywhole_run_cell(source, filename="<py_whole>"):
     _pywhole_patch_matplotlib()
     namespace = __main__.__dict__
     tree = ast.parse(source, mode="exec")
@@ -1328,12 +1328,12 @@ def _pywhole_run_cell(source):
     if tree.body and isinstance(tree.body[-1], ast.Expr):
         prefix = ast.Module(body=tree.body[:-1], type_ignores=[])
         if prefix.body:
-            exec(compile(prefix, "<py_whole>", "exec"), namespace, namespace)
+            exec(compile(prefix, filename, "exec"), namespace, namespace)
         expr = ast.Expression(tree.body[-1].value)
-        value = eval(compile(expr, "<py_whole>", "eval"), namespace, namespace)
+        value = eval(compile(expr, filename, "eval"), namespace, namespace)
         _pywhole_capture_display(value)
     else:
-        exec(compile(tree, "<py_whole>", "exec"), namespace, namespace)
+        exec(compile(tree, filename, "exec"), namespace, namespace)
 
     _pywhole_patch_matplotlib()
     _pywhole_capture_figures()
@@ -5237,7 +5237,7 @@ function renderDebugViewer() {
       {
         label: "Step Over",
         disabled: !notebookState.debug.active || notebookState.execution.busy || stopOnly,
-        onClick: () => void stepDebugSession(),
+        onClick: () => void stepOverDebugSession(),
       },
       {
         label: "Stop",
@@ -5374,6 +5374,7 @@ async function executeCodeCell(cell, notebook, options = {}) {
   const runningLabel = options.runningLabel || `Running cell ${cell.id}`;
   const successLabel = options.successLabel || "Runtime ready";
   const errorPrefix = options.errorPrefix || "Execution error";
+  const filename = debugFilenameForCell(notebook?.id || "active", cell.id);
 
   updateKernelState(runningLabel);
   cell.status = "Running";
@@ -5381,7 +5382,7 @@ async function executeCodeCell(cell, notebook, options = {}) {
   renderNotebook();
 
   try {
-    const outputs = await runtimeAdapter.execute(cell.source);
+    const outputs = await runtimeAdapter.execute(cell.source, { filename });
     cell.outputs = outputs;
     cell.executionCount = (cell.executionCount || 0) + 1;
     cell.status = "Complete";
@@ -5725,6 +5726,55 @@ async function stepDebugSession() {
   pauseDebugAtCell(nextCodeCell.id, `Debugger stepped to cell ${nextCodeCell.id}.`);
 }
 
+async function stepOverDebugSession() {
+  const notebook = activeNotebook();
+  if (!notebook || notebookState.execution.busy || !notebookState.debug.pausedCellId) {
+    return;
+  }
+
+  if (runtimeAdapter.useWorkerRuntime() && notebookState.runtimeReady) {
+    const cell = notebook.cells.find((entry) => entry.id === notebookState.debug.pausedCellId)
+      || notebook.cells.find((entry) => entry.id === activeDebugCellId());
+    if (!cell) {
+      stopDebugSession("Debug session stopped");
+      return;
+    }
+    beginExecution(cell.id, { runAll: false });
+    try {
+      const result = await runtimeAdapter.stepOverDebugSession();
+      appendDebugOutputsToCell(cell, result?.outputs || []);
+      syncDebugStateFromRuntime(result?.state || null);
+      if (notebookState.debug.status === "completed") {
+        cell.status = "Complete";
+        cell.executionCount = (cell.executionCount || 0) + 1;
+        updateKernelState("Debug session complete");
+        notebook.updatedAt = new Date().toISOString();
+        renderNotebook();
+        renderDebugViewer();
+        await refreshVariableViewer();
+        stopDebugSession("Debug session complete");
+        return;
+      }
+      if (notebookState.debug.status === "exception") {
+        cell.status = "Error";
+        updateKernelState(activeDebugLocationLabel() || "Exception paused");
+      } else {
+        cell.status = "Paused";
+        updateKernelState(activeDebugLocationLabel() || "Paused");
+      }
+      notebook.updatedAt = new Date().toISOString();
+      renderNotebook();
+      renderDebugViewer();
+      await refreshVariableViewer();
+      return;
+    } finally {
+      endExecution();
+    }
+  }
+
+  await stepDebugSession();
+}
+
 function handleGlobalDebugShortcut(event) {
   const target = event.target;
   const isEditableTarget = target instanceof HTMLTextAreaElement
@@ -5742,7 +5792,7 @@ function handleGlobalDebugShortcut(event) {
   if (event.key === "F10") {
     event.preventDefault();
     if (notebookState.debug.active && notebookState.debug.pausedCellId && !notebookState.execution.busy) {
-      void stepDebugSession();
+      void stepOverDebugSession();
     }
     return true;
   }
@@ -5897,6 +5947,9 @@ function wireEvents() {
   });
   bindClick("step-debug", () => {
     void stepDebugSession();
+  });
+  bindClick("step-over-debug", () => {
+    void stepOverDebugSession();
   });
   bindClick("stop-debug", () => stopDebugSession());
   bindClick("toolbar-run-all", runAllCells);

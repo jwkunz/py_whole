@@ -28,6 +28,18 @@ function workerDebugFilename(cellId) {
   return `pywhole://notebook/${notebookId}/cell/${cellId}.py`;
 }
 
+function parseWorkerDebugFilename(filename) {
+  const value = String(filename || "");
+  const match = value.match(/^pywhole:\/\/notebook\/([^/]+)\/cell\/(\d+)\.py$/);
+  if (!match) {
+    return null;
+  }
+  return {
+    notebookId: decodeURIComponent(match[1]),
+    cellId: Number(match[2]),
+  };
+}
+
 function normalizeFetchUrl(input) {
   if (typeof input === "string") {
     return input;
@@ -238,11 +250,22 @@ import json
 source = ${JSON.stringify(String(cell.source || ""))}
 tree = ast.parse(source, mode="exec")
 plan = []
+
+def _pywhole_statement_call_names(statement):
+    names = []
+    for node in ast.walk(statement):
+        if isinstance(node, ast.Call):
+            func = getattr(node, "func", None)
+            if isinstance(func, ast.Name):
+                names.append(func.id)
+    return sorted(set(names))
+
 for statement in tree.body:
     plan.append({
         "lineno": getattr(statement, "lineno", 1),
         "end_lineno": getattr(statement, "end_lineno", getattr(statement, "lineno", 1)),
         "is_expression": isinstance(statement, ast.Expr),
+        "call_names": _pywhole_statement_call_names(statement),
     })
 json.dumps(plan)
 `);
@@ -252,7 +275,41 @@ json.dumps(plan)
     source: String(cell.source || ""),
     statements,
     statementIndex: 0,
+    previewTarget: null,
   };
+}
+
+async function resolveAuthoredCallTarget(statement) {
+  const callNames = Array.isArray(statement?.call_names) ? statement.call_names : [];
+  if (!callNames.length || !pyodide) {
+    return null;
+  }
+  const resolver = pyodide.globals.get("_pywhole_debug_resolve_authored_targets");
+  const proxy = resolver(JSON.stringify(callNames));
+  try {
+    const targets = proxy?.toJs ? proxy.toJs() : proxy;
+    const first = Array.isArray(targets) ? targets[0] : null;
+    if (!first) {
+      return null;
+    }
+    const parsed = parseWorkerDebugFilename(first.filename || "");
+    if (!parsed) {
+      return null;
+    }
+    return {
+      ...first,
+      cell_id: parsed.cellId,
+      line: Number.isFinite(first.line) ? first.line : first.first_line,
+      location_label: debugCellLabel(parsed.cellId, Number.isFinite(first.line) ? first.line : first.first_line),
+    };
+  } finally {
+    if (proxy && typeof proxy.destroy === "function") {
+      proxy.destroy();
+    }
+    if (resolver && typeof resolver.destroy === "function") {
+      resolver.destroy();
+    }
+  }
 }
 
 function nextExecutableLine(cellId, currentLine) {
@@ -277,7 +334,18 @@ function updateDebugState(nextState = {}) {
       ? debugCellLabel(nextState.paused_cell_id, nextState.paused_line)
       : "");
   const topFrameLocals = Array.isArray(nextState.locals) ? nextState.locals : [];
-  const frames = Array.isArray(nextState.frames) ? nextState.frames : (
+  const frames = Array.isArray(nextState.frames) ? nextState.frames.map((frame) => {
+    const parsed = parseWorkerDebugFilename(frame?.filename || "");
+    const cellId = Number.isFinite(frame?.cell_id) ? frame.cell_id : (parsed?.cellId ?? null);
+    const line = Number.isFinite(frame?.line) ? frame.line : null;
+    return {
+      ...frame,
+      cell_id: cellId,
+      line,
+      location_label: frame?.location_label || (Number.isFinite(cellId) ? debugCellLabel(cellId, line) : (frame?.filename || frame?.name || "Frame")),
+      locals: Array.isArray(frame?.locals) ? frame.locals : [],
+    };
+  }) : (
     Number.isFinite(nextState.paused_cell_id)
       ? [{
           cell_id: nextState.paused_cell_id,
@@ -352,6 +420,8 @@ async function executePlannedStatement(plan, statementIndex) {
   self.__pyWholeDisplayOutputs = [];
   let execFn = null;
   let proxy = null;
+  let exceptionFn = null;
+  let exceptionProxy = null;
   try {
     execFn = pyodide.globals.get("_pywhole_debug_exec_statement");
     proxy = execFn(snippet, workerDebugFilename(plan.cellId), statement.is_expression);
@@ -363,6 +433,18 @@ async function executePlannedStatement(plan, statementIndex) {
       displayOutputs: self.__pyWholeDisplayOutputs || [],
     };
   } catch (error) {
+    try {
+      exceptionFn = pyodide.globals.get("_pywhole_debug_exception_payload");
+      exceptionProxy = exceptionFn(error);
+      const payload = exceptionProxy?.toJs ? exceptionProxy.toJs() : exceptionProxy;
+      return {
+        ...payload,
+        stdout,
+        stderr,
+        displayOutputs: self.__pyWholeDisplayOutputs || [],
+      };
+    } catch (_innerError) {
+    }
     return {
       ok: false,
       error: String(error?.message || error),
@@ -376,6 +458,12 @@ async function executePlannedStatement(plan, statementIndex) {
     }
     if (execFn && typeof execFn.destroy === "function") {
       execFn.destroy();
+    }
+    if (exceptionProxy && typeof exceptionProxy.destroy === "function") {
+      exceptionProxy.destroy();
+    }
+    if (exceptionFn && typeof exceptionFn.destroy === "function") {
+      exceptionFn.destroy();
     }
     pyodide.setStdout({ batched: () => {} });
     pyodide.setStderr({ batched: () => {} });
@@ -395,6 +483,7 @@ async function continueDebugSession() {
   const outputs = [];
   while (activeDebugPlan.statementIndex < activeDebugPlan.statements.length) {
     const statement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
+    activeDebugPlan.previewTarget = null;
     if (activeDebugPlan.statementIndex > 0 && breakpoints.has(statement.lineno)) {
       return {
         state: updateDebugState({
@@ -459,6 +548,43 @@ async function stepIntoDebugSession() {
     };
   }
   const statement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
+  if (!activeDebugPlan.previewTarget) {
+    const target = await resolveAuthoredCallTarget(statement);
+    if (target) {
+      activeDebugPlan.previewTarget = {
+        statementIndex: activeDebugPlan.statementIndex,
+        target,
+      };
+      return {
+        state: updateDebugState({
+          status: "paused",
+          reason: "Step Into Preview",
+          paused_cell_id: target.cell_id,
+          paused_line: target.line,
+          current_location_label: target.location_label,
+          frames: [
+            {
+              cell_id: activeDebugPlan.cellId,
+              line: statement.lineno,
+              location_label: debugCellLabel(activeDebugPlan.cellId, statement.lineno),
+              locals: [],
+            },
+            {
+              cell_id: target.cell_id,
+              line: target.line,
+              location_label: target.location_label,
+              locals: [],
+            },
+          ],
+          selected_frame_index: 1,
+          note: `Authored function entry preview: ${target.name}`,
+        }),
+        outputs: [],
+      };
+    }
+  } else if (activeDebugPlan.previewTarget.statementIndex === activeDebugPlan.statementIndex) {
+    activeDebugPlan.previewTarget = null;
+  }
   const statementResult = await executePlannedStatement(activeDebugPlan, activeDebugPlan.statementIndex);
   if (!statementResult?.ok) {
     activeDebugPlan = null;
@@ -501,7 +627,70 @@ async function stepIntoDebugSession() {
 }
 
 async function stepOverDebugSession() {
-  return stepIntoDebugSession();
+  if (activeDebugPlan) {
+    activeDebugPlan.previewTarget = null;
+  }
+  if (!activeDebugPlan || !Number.isFinite(activeDebugPlan.cellId)) {
+    return updateDebugState({
+      status: "idle",
+      reason: "",
+      note: "No active debug session.",
+    });
+  }
+  if (activeDebugPlan.statementIndex >= activeDebugPlan.statements.length) {
+    activeDebugPlan = null;
+    return {
+      state: updateDebugState({
+        status: "completed",
+        reason: "Completed",
+        paused_cell_id: null,
+        paused_line: null,
+        note: "Reached the end of the current authored cell.",
+      }),
+      outputs: [],
+    };
+  }
+  const statement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
+  const statementResult = await executePlannedStatement(activeDebugPlan, activeDebugPlan.statementIndex);
+  if (!statementResult?.ok) {
+    activeDebugPlan = null;
+    return {
+      state: updateDebugState({
+        status: "exception",
+        reason: "Exception paused",
+        paused_cell_id: activeDebugPlan?.cellId || null,
+        paused_line: statement?.lineno || null,
+        frames: Array.isArray(statementResult?.frames) ? statementResult.frames : [],
+        note: statementResult.error || "Statement execution failed.",
+      }),
+      outputs: [statementResult],
+    };
+  }
+  activeDebugPlan.statementIndex += 1;
+  const nextStatement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
+  if (nextStatement) {
+    return {
+      state: updateDebugState({
+        status: "paused",
+        reason: "Step Over",
+        paused_cell_id: activeDebugPlan.cellId,
+        paused_line: nextStatement.lineno,
+        note: "Stepped over the current statement.",
+      }),
+      outputs: [statementResult],
+    };
+  }
+  activeDebugPlan = null;
+  return {
+    state: updateDebugState({
+      status: "completed",
+      reason: "Completed",
+      paused_cell_id: null,
+      paused_line: null,
+      note: "Reached the end of the current authored cell.",
+    }),
+    outputs: [statementResult],
+  };
 }
 
 function stopDebugSession() {
@@ -649,7 +838,7 @@ def _pywhole_patch_matplotlib():
     except Exception:
         pass
 
-def _pywhole_run_cell(source):
+def _pywhole_run_cell(source, filename="<py_whole>"):
     _pywhole_patch_matplotlib()
     namespace = __main__.__dict__
     tree = ast.parse(source, mode="exec")
@@ -657,12 +846,12 @@ def _pywhole_run_cell(source):
     if tree.body and isinstance(tree.body[-1], ast.Expr):
         prefix = ast.Module(body=tree.body[:-1], type_ignores=[])
         if prefix.body:
-            exec(compile(prefix, "<py_whole>", "exec"), namespace, namespace)
+            exec(compile(prefix, filename, "exec"), namespace, namespace)
         expr = ast.Expression(tree.body[-1].value)
-        value = eval(compile(expr, "<py_whole>", "eval"), namespace, namespace)
+        value = eval(compile(expr, filename, "eval"), namespace, namespace)
         _pywhole_capture_display(value)
     else:
-        exec(compile(tree, "<py_whole>", "exec"), namespace, namespace)
+        exec(compile(tree, filename, "exec"), namespace, namespace)
 
     _pywhole_patch_matplotlib()
     _pywhole_capture_figures()
@@ -738,6 +927,66 @@ def _pywhole_debug_exec_statement(source, filename, is_expression):
     return {
         "ok": True,
         "locals": _pywhole_debug_snapshot_namespace(),
+    }
+
+def _pywhole_debug_resolve_authored_targets(names_json):
+    names = json.loads(names_json or "[]")
+    namespace = __main__.__dict__
+    targets = []
+    for name in names:
+        value = namespace.get(name)
+        code = getattr(value, "__code__", None)
+        if code is None:
+            continue
+        filename = getattr(code, "co_filename", "")
+        if not str(filename).startswith("pywhole://notebook/"):
+            continue
+        targets.append({
+            "name": str(name),
+            "filename": str(filename),
+            "line": int(getattr(code, "co_firstlineno", 1)),
+        })
+    return targets
+
+def _pywhole_debug_exception_payload(exc):
+    import traceback
+
+    frames = []
+    tb = exc.__traceback__
+    while tb is not None:
+        frame = tb.tb_frame
+        code = frame.f_code
+        locals_payload = []
+        for name in sorted(frame.f_locals):
+            if str(name).startswith("_"):
+                continue
+            value = frame.f_locals[name]
+            try:
+                value_type = type(value).__name__
+            except Exception:
+                value_type = "unknown"
+            value_repr = _pywhole_safe_repr(value, 120)
+            locals_payload.append({
+                "name": str(name),
+                "type": value_type,
+                "value": value_repr,
+                "summary": value_repr,
+                "detail_kind": "text",
+                "detail": _pywhole_safe_repr(value, 4000),
+            })
+        frames.append({
+            "name": code.co_name,
+            "filename": code.co_filename,
+            "line": tb.tb_lineno,
+            "locals": locals_payload,
+        })
+        tb = tb.tb_next
+
+    return {
+        "ok": False,
+        "error": str(exc),
+        "frames": frames,
+        "traceback": "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
     }
 
 def _pywhole_list_variables():
@@ -842,7 +1091,7 @@ async function initializeRuntime({ files = [], preloadPackages = [] }) {
   };
 }
 
-async function executeCode(source) {
+async function executeCode(source, options = {}) {
   if (!pyodide) {
     throw new Error("Runtime is not initialized.");
   }
@@ -855,7 +1104,7 @@ async function executeCode(source) {
     if (!runCellFn) {
       runCellFn = pyodide.globals.get("_pywhole_run_cell");
     }
-    await runCellFn(source);
+    await runCellFn(source, String(options.filename || "<py_whole>"));
   } finally {
     pyodide.setStdout({ batched: () => {} });
     pyodide.setStderr({ batched: () => {} });
@@ -1017,7 +1266,7 @@ self.onmessage = async (event) => {
         result = { ok: true };
         break;
       case "execute":
-        result = await executeCode(payload?.source || "");
+        result = await executeCode(payload?.source || "", payload?.options || {});
         break;
       case "listVariables":
         result = await listVariables();
