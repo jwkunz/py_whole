@@ -1975,6 +1975,7 @@ function debugStateStatusLabel(status) {
 
 function syncDebugStateFromRuntime(runtimeState) {
   const nextState = runtimeState && typeof runtimeState === "object" ? runtimeState : {};
+  const previousPreviewMode = Boolean(notebookState.debug.previewMode);
   const previousFrames = Array.isArray(notebookState.debug.frames) ? notebookState.debug.frames : [];
   const previousSelectedFrame = previousFrames[Math.max(0, Math.min(
     Number.isInteger(notebookState.debug.selectedFrameIndex) ? notebookState.debug.selectedFrameIndex : 0,
@@ -2006,6 +2007,8 @@ function syncDebugStateFromRuntime(runtimeState) {
     notebookState.debug.selectedFrameIndex = Number.isFinite(nextState.selected_frame_index)
       ? nextState.selected_frame_index
       : nextState.selectedFrameIndex;
+  } else if (previousPreviewMode && !notebookState.debug.previewMode) {
+    notebookState.debug.selectedFrameIndex = 0;
   } else if (previousSelectedSignature && notebookState.debug.frames.length) {
     const preservedIndex = notebookState.debug.frames.findIndex(
       (frame) => debugFrameSignature(frame) === previousSelectedSignature,
