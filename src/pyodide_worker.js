@@ -534,6 +534,27 @@ async function previewLocalsForTarget(plan, statement, target) {
   }
 }
 
+async function previewFramesForTarget(plan, statement, target, previewLocals) {
+  const runtimeFrames = await snapshotCurrentDebugStack();
+  const callerFrames = Array.isArray(runtimeFrames) && runtimeFrames.length
+    ? runtimeFrames
+    : [{
+        cell_id: plan.cellId,
+        line: statement.lineno,
+        location_label: debugCellLabel(plan.cellId, statement.lineno),
+        locals: Array.isArray(plan.lastLocals) ? plan.lastLocals : [],
+      }];
+  return [
+    {
+      cell_id: target.cell_id,
+      line: target.line,
+      location_label: debugCellLabel(target.cell_id, target.line),
+      locals: previewLocals,
+    },
+    ...callerFrames,
+  ];
+}
+
 function targetPauseLine(target) {
   if (!target || !Number.isFinite(target.cell_id)) {
     return null;
@@ -790,7 +811,13 @@ async function continueDebugSession() {
     if (!skipPreview && target && breakpointLines(target.cell_id).length) {
       const pauseLine = targetPauseLine(target);
       const previewLocals = await previewLocalsForTarget(activeDebugPlan, statement, target);
-      const selectedFrameIndex = previewLocals.length ? 0 : 1;
+      const previewFrames = await previewFramesForTarget(
+        activeDebugPlan,
+        statement,
+        { ...target, line: pauseLine },
+        previewLocals,
+      );
+      const selectedFrameIndex = previewLocals.length ? 0 : Math.min(1, Math.max(0, previewFrames.length - 1));
       activeDebugPlan.previewTarget = {
         statementIndex: activeDebugPlan.statementIndex,
         target: {
@@ -808,20 +835,7 @@ async function continueDebugSession() {
           paused_cell_id: target.cell_id,
           paused_line: pauseLine,
           current_location_label: debugCellLabel(target.cell_id, pauseLine),
-          frames: [
-            {
-              cell_id: target.cell_id,
-              line: pauseLine,
-              location_label: debugCellLabel(target.cell_id, pauseLine),
-              locals: previewLocals,
-            },
-            {
-              cell_id: activeDebugPlan.cellId,
-              line: statement.lineno,
-              location_label: debugCellLabel(activeDebugPlan.cellId, statement.lineno),
-              locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
-            },
-          ],
+          frames: previewFrames,
           selected_frame_index: selectedFrameIndex,
           note: `About to enter authored function with breakpoint: ${target.name}`,
         }),
@@ -900,7 +914,13 @@ async function stepIntoDebugSession() {
     if (target) {
       const pauseLine = targetPauseLine(target);
       const previewLocals = await previewLocalsForTarget(activeDebugPlan, statement, target);
-      const selectedFrameIndex = previewLocals.length ? 0 : 1;
+      const previewFrames = await previewFramesForTarget(
+        activeDebugPlan,
+        statement,
+        { ...target, line: pauseLine },
+        previewLocals,
+      );
+      const selectedFrameIndex = previewLocals.length ? 0 : Math.min(1, Math.max(0, previewFrames.length - 1));
       activeDebugPlan.previewTarget = {
         statementIndex: activeDebugPlan.statementIndex,
         target: {
@@ -918,20 +938,7 @@ async function stepIntoDebugSession() {
           paused_cell_id: target.cell_id,
           paused_line: pauseLine,
           current_location_label: debugCellLabel(target.cell_id, pauseLine),
-          frames: [
-            {
-              cell_id: target.cell_id,
-              line: pauseLine,
-              location_label: debugCellLabel(target.cell_id, pauseLine),
-              locals: previewLocals,
-            },
-            {
-              cell_id: activeDebugPlan.cellId,
-              line: statement.lineno,
-              location_label: debugCellLabel(activeDebugPlan.cellId, statement.lineno),
-              locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
-            },
-          ],
+          frames: previewFrames,
           selected_frame_index: selectedFrameIndex,
           note: `Authored function entry preview: ${target.name}`,
         }),
