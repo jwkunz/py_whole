@@ -44,6 +44,28 @@ function parseWorkerDebugFilename(filename) {
   };
 }
 
+function currentDebugBreakpointsPayload() {
+  return JSON.stringify(debugNotebookManifest.breakpointsByCell || {});
+}
+
+function tracedBreakpointFrames(statementResult) {
+  return Array.isArray(statementResult?.breakpoint_frames)
+    ? statementResult.breakpoint_frames
+    : [];
+}
+
+function tracedFirstFrames(statementResult) {
+  return Array.isArray(statementResult?.first_frames)
+    ? statementResult.first_frames
+    : [];
+}
+
+function tracedLastFrames(statementResult) {
+  return Array.isArray(statementResult?.frames)
+    ? statementResult.frames
+    : [];
+}
+
 function authoredFrameLocation(frames) {
   const entries = Array.isArray(frames) ? frames : [];
   for (const frame of entries) {
@@ -725,7 +747,12 @@ async function executePlannedStatement(plan, statementIndex) {
   let exceptionProxy = null;
   try {
     execFn = pyodide.globals.get("_pywhole_debug_exec_statement");
-    proxy = execFn(snippet, workerDebugFilename(plan.cellId), statement.is_expression);
+    proxy = execFn(
+      snippet,
+      workerDebugFilename(plan.cellId),
+      statement.is_expression,
+      currentDebugBreakpointsPayload(),
+    );
     const result = proxy?.toJs ? proxy.toJs() : proxy;
     return {
       ...result,
@@ -865,12 +892,15 @@ async function continueDebugSession() {
     }
     activeDebugPlan.lastLocals = Array.isArray(statementResult?.locals) ? statementResult.locals : activeDebugPlan.lastLocals;
     activeDebugPlan.statementIndex += 1;
-    const tracedFrames = Array.isArray(statementResult?.frames) ? statementResult.frames : [];
+    const breakpointFrames = tracedBreakpointFrames(statementResult);
+    const tracedFrames = breakpointFrames.length ? breakpointFrames : tracedLastFrames(statementResult);
     const pauseFrame = authoredFrameLocation(tracedFrames);
-    const pauseCellBreakpoints = pauseFrame ? breakpointLines(pauseFrame.cellId) : [];
-    const hitBreakpoint = pauseFrame
-      && Number.isFinite(pauseFrame.line)
-      && pauseCellBreakpoints.includes(pauseFrame.line);
+    const hitBreakpoint = breakpointFrames.length > 0
+      || Boolean(
+        pauseFrame
+        && Number.isFinite(pauseFrame.line)
+        && breakpointLines(pauseFrame.cellId).includes(pauseFrame.line),
+      );
     if (pauseFrame && Number.isFinite(pauseFrame.cellId) && pauseFrame.cellId !== cellId && hitBreakpoint) {
       return {
         state: updateDebugState({
@@ -1025,10 +1055,33 @@ async function stepIntoDebugSession() {
   }
   activeDebugPlan.lastLocals = Array.isArray(statementResult?.locals) ? statementResult.locals : activeDebugPlan.lastLocals;
   activeDebugPlan.statementIndex += 1;
-  const firstTracedFrames = Array.isArray(statementResult?.first_frames) ? statementResult.first_frames : [];
-  const tracedFrames = Array.isArray(statementResult?.frames) ? statementResult.frames : [];
-  const stepIntoFrames = firstTracedFrames.length ? firstTracedFrames : tracedFrames;
+  const breakpointFrames = tracedBreakpointFrames(statementResult);
+  const firstTracedFrames = tracedFirstFrames(statementResult);
+  const tracedFrames = tracedLastFrames(statementResult);
+  const stepIntoFrames = breakpointFrames.length
+    ? breakpointFrames
+    : (firstTracedFrames.length ? firstTracedFrames : tracedFrames);
   const tracedPauseFrame = authoredFrameLocation(stepIntoFrames);
+  const hitCalledBreakpoint = breakpointFrames.length > 0
+    && tracedPauseFrame
+    && Number.isFinite(tracedPauseFrame.cellId)
+    && tracedPauseFrame.cellId !== activeDebugPlan.cellId;
+  if (tracedPauseFrame && hitCalledBreakpoint) {
+    return {
+      state: updateDebugState({
+        status: "paused",
+        reason: "Paused at called-cell breakpoint",
+        owner_cell_id: activeDebugPlan.cellId,
+        preview_mode: false,
+        paused_cell_id: tracedPauseFrame.cellId,
+        paused_line: tracedPauseFrame.line,
+        frames: stepIntoFrames,
+        selected_frame_index: authoredFrameSelectionIndex(stepIntoFrames),
+        note: "Execution reached a breakpoint in authored notebook code within the previous statement.",
+      }),
+      outputs: [statementResult],
+    };
+  }
   if (tracedPauseFrame && Number.isFinite(tracedPauseFrame.cellId) && tracedPauseFrame.cellId !== activeDebugPlan.cellId) {
     return {
       state: updateDebugState({
@@ -1131,14 +1184,14 @@ async function stepOverDebugSession() {
   }
   activeDebugPlan.lastLocals = Array.isArray(statementResult?.locals) ? statementResult.locals : activeDebugPlan.lastLocals;
   activeDebugPlan.statementIndex += 1;
-  const tracedFrames = Array.isArray(statementResult?.frames) ? statementResult.frames : [];
+  const breakpointFrames = tracedBreakpointFrames(statementResult);
+  const tracedFrames = breakpointFrames.length ? breakpointFrames : tracedLastFrames(statementResult);
   const tracedPauseFrame = authoredFrameLocation(tracedFrames);
-  const tracedPauseBreakpoints = tracedPauseFrame ? breakpointLines(tracedPauseFrame.cellId) : [];
-  const hitCalledBreakpoint = tracedPauseFrame
+  const hitCalledBreakpoint = (breakpointFrames.length > 0 || Boolean(tracedPauseFrame
     && Number.isFinite(tracedPauseFrame.cellId)
     && tracedPauseFrame.cellId !== activeDebugPlan.cellId
     && Number.isFinite(tracedPauseFrame.line)
-    && tracedPauseBreakpoints.includes(tracedPauseFrame.line);
+    && breakpointLines(tracedPauseFrame.cellId).includes(tracedPauseFrame.line)));
   if (hitCalledBreakpoint) {
     return {
       state: updateDebugState({
@@ -1252,6 +1305,7 @@ import __main__
 import inspect
 import json
 import os
+import re
 import sys
 from pywhole_bridge import push_output_json
 
@@ -1438,16 +1492,23 @@ def _pywhole_debug_stack_from_frame(start_frame):
         current = current.f_back
     return frames
 
-def _pywhole_debug_exec_statement(source, filename, is_expression):
+def _pywhole_debug_exec_statement(source, filename, is_expression, breakpoints_json="{}"):
     _pywhole_patch_matplotlib()
     namespace = __main__.__dict__
     tree = ast.parse(source, mode="exec")
     previous_trace = sys.gettrace()
+    breakpoints = json.loads(breakpoints_json or "{}")
     first_frames = []
+    breakpoint_frames = []
     last_frames = []
+
+    def _cell_id_from_filename(value):
+        match = re.search(r"/cell/(\\d+)\\.py$", str(value or ""))
+        return int(match.group(1)) if match else None
 
     def _trace(frame, event, arg):
         nonlocal first_frames
+        nonlocal breakpoint_frames
         nonlocal last_frames
         code = frame.f_code
         current_filename = getattr(code, "co_filename", "")
@@ -1455,6 +1516,11 @@ def _pywhole_debug_exec_statement(source, filename, is_expression):
             stack = _pywhole_debug_stack_from_frame(frame)
             if not first_frames:
                 first_frames = stack
+            cell_id = _cell_id_from_filename(current_filename)
+            line = int(getattr(frame, "f_lineno", 0) or 0)
+            cell_breakpoints = breakpoints.get(str(cell_id)) or breakpoints.get(cell_id) or []
+            if not breakpoint_frames and cell_id is not None and line in cell_breakpoints:
+                breakpoint_frames = stack
             last_frames = stack
         return _trace
 
@@ -1474,6 +1540,7 @@ def _pywhole_debug_exec_statement(source, filename, is_expression):
         "ok": True,
         "locals": _pywhole_debug_snapshot_namespace(),
         "first_frames": first_frames,
+        "breakpoint_frames": breakpoint_frames,
         "frames": last_frames,
     }
 
