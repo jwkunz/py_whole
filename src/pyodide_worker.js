@@ -13,6 +13,7 @@ let debugNotebookManifest = {
   notebookId: null,
   cells: [],
   cellMap: new Map(),
+  authoredDefinitions: new Map(),
   breakpointsByCell: {},
   status: "idle",
   reason: "",
@@ -38,6 +39,36 @@ function parseWorkerDebugFilename(filename) {
     notebookId: decodeURIComponent(match[1]),
     cellId: Number(match[2]),
   };
+}
+
+function authoredFrameLocation(frames) {
+  const entries = Array.isArray(frames) ? frames : [];
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const frame = entries[index];
+    const parsed = parseWorkerDebugFilename(frame?.filename || "");
+    const cellId = Number.isFinite(frame?.cell_id) ? frame.cell_id : (parsed?.cellId ?? null);
+    const line = Number.isFinite(frame?.line) ? frame.line : null;
+    if (Number.isFinite(cellId) && Number.isFinite(line)) {
+      return {
+        cellId,
+        line,
+      };
+    }
+  }
+  return null;
+}
+
+function authoredFrameSelectionIndex(frames) {
+  const entries = Array.isArray(frames) ? frames : [];
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const frame = entries[index];
+    const parsed = parseWorkerDebugFilename(frame?.filename || "");
+    const cellId = Number.isFinite(frame?.cell_id) ? frame.cell_id : (parsed?.cellId ?? null);
+    if (Number.isFinite(cellId)) {
+      return index;
+    }
+  }
+  return 0;
 }
 
 function normalizeFetchUrl(input) {
@@ -175,6 +206,7 @@ function ensureParentDirectories(fsApi, filePath) {
 
 function setDebugNotebookManifest(payload = {}) {
   const cells = Array.isArray(payload.cells) ? payload.cells : [];
+  const authoredDefinitions = new Map();
   debugNotebookManifest = {
     notebookId: payload.notebookId ?? null,
     cells: cells
@@ -185,6 +217,7 @@ function setDebugNotebookManifest(payload = {}) {
         source: String(cell.source || ""),
       })),
     cellMap: new Map(),
+    authoredDefinitions,
     breakpointsByCell: payload.breakpointsByCell && typeof payload.breakpointsByCell === "object"
       ? payload.breakpointsByCell
       : {},
@@ -197,6 +230,20 @@ function setDebugNotebookManifest(payload = {}) {
   };
   debugNotebookManifest.cells.forEach((cell) => {
     debugNotebookManifest.cellMap.set(cell.id, cell);
+    const pattern = /^\s*(?:async\s+def|def|class)\s+([A-Za-z_][A-Za-z0-9_]*)/gm;
+    for (const match of String(cell.source || "").matchAll(pattern)) {
+      const name = String(match[1] || "");
+      if (!name || debugNotebookManifest.authoredDefinitions.has(name)) {
+        continue;
+      }
+      const upto = String(cell.source || "").slice(0, match.index || 0);
+      const line = upto ? upto.split("\n").length + 1 : 1;
+      debugNotebookManifest.authoredDefinitions.set(name, {
+        name,
+        cell_id: cell.id,
+        line,
+      });
+    }
   });
   activeDebugPlan = null;
 }
@@ -253,11 +300,27 @@ plan = []
 
 def _pywhole_statement_call_names(statement):
     names = []
+
+    def _call_name(node):
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            parts = []
+            current = node
+            while isinstance(current, ast.Attribute):
+                parts.append(current.attr)
+                current = current.value
+            if isinstance(current, ast.Name):
+                parts.append(current.id)
+                return ".".join(reversed(parts))
+        return None
+
     for node in ast.walk(statement):
         if isinstance(node, ast.Call):
             func = getattr(node, "func", None)
-            if isinstance(func, ast.Name):
-                names.append(func.id)
+            name = _call_name(func)
+            if name:
+                names.append(name)
     return sorted(set(names))
 
 for statement in tree.body:
@@ -270,13 +333,33 @@ for statement in tree.body:
 json.dumps(plan)
 `);
   const statements = JSON.parse(planJson || "[]");
+  const initialLocals = await snapshotDebugLocals();
   return {
     cellId,
     source: String(cell.source || ""),
     statements,
     statementIndex: 0,
     previewTarget: null,
+    lastLocals: initialLocals,
   };
+}
+
+async function snapshotDebugLocals() {
+  if (!pyodide) {
+    return [];
+  }
+  const snapshotFn = pyodide.globals.get("_pywhole_debug_snapshot_namespace");
+  const proxy = snapshotFn();
+  try {
+    return proxy?.toJs ? proxy.toJs() : proxy;
+  } finally {
+    if (proxy && typeof proxy.destroy === "function") {
+      proxy.destroy();
+    }
+    if (snapshotFn && typeof snapshotFn.destroy === "function") {
+      snapshotFn.destroy();
+    }
+  }
 }
 
 async function resolveAuthoredCallTarget(statement) {
@@ -288,20 +371,24 @@ async function resolveAuthoredCallTarget(statement) {
   const proxy = resolver(JSON.stringify(callNames));
   try {
     const targets = proxy?.toJs ? proxy.toJs() : proxy;
-    const first = Array.isArray(targets) ? targets[0] : null;
-    if (!first) {
+    const resolvedTargets = Array.isArray(targets) ? targets.map((entry) => {
+      const parsed = parseWorkerDebugFilename(entry.filename || "");
+      if (!parsed) {
+        return null;
+      }
+      const line = Number.isFinite(entry.line) ? entry.line : entry.first_line;
+      return {
+        ...entry,
+        cell_id: parsed.cellId,
+        line,
+        location_label: debugCellLabel(parsed.cellId, line),
+      };
+    }).filter(Boolean) : [];
+    if (!resolvedTargets.length) {
       return null;
     }
-    const parsed = parseWorkerDebugFilename(first.filename || "");
-    if (!parsed) {
-      return null;
-    }
-    return {
-      ...first,
-      cell_id: parsed.cellId,
-      line: Number.isFinite(first.line) ? first.line : first.first_line,
-      location_label: debugCellLabel(parsed.cellId, Number.isFinite(first.line) ? first.line : first.first_line),
-    };
+    const withBreakpoints = resolvedTargets.find((entry) => breakpointLines(entry.cell_id).length > 0);
+    return withBreakpoints || resolvedTargets[0];
   } finally {
     if (proxy && typeof proxy.destroy === "function") {
       proxy.destroy();
@@ -310,6 +397,65 @@ async function resolveAuthoredCallTarget(statement) {
       resolver.destroy();
     }
   }
+}
+
+function statementSourceSnippet(plan, statement) {
+  if (!plan || !statement) {
+    return "";
+  }
+  return String(plan.source || "")
+    .split("\n")
+    .slice(Math.max(0, statement.lineno - 1), statement.end_lineno)
+    .join("\n");
+}
+
+async function previewLocalsForTarget(plan, statement, target) {
+  if (!pyodide || !plan || !statement || !target?.name) {
+    return [];
+  }
+  const previewFn = pyodide.globals.get("_pywhole_debug_preview_locals");
+  const proxy = previewFn(
+    statementSourceSnippet(plan, statement),
+    workerDebugFilename(plan.cellId),
+    String(target.name),
+  );
+  try {
+    const preview = proxy?.toJs ? proxy.toJs() : proxy;
+    return Array.isArray(preview?.locals) ? preview.locals : [];
+  } finally {
+    if (proxy && typeof proxy.destroy === "function") {
+      proxy.destroy();
+    }
+    if (previewFn && typeof previewFn.destroy === "function") {
+      previewFn.destroy();
+    }
+  }
+}
+
+function targetPauseLine(target) {
+  if (!target || !Number.isFinite(target.cell_id)) {
+    return null;
+  }
+  const lines = breakpointLines(target.cell_id);
+  const preferredLine = Number.isFinite(target.line) ? target.line : 1;
+  return lines.find((line) => line >= preferredLine) || preferredLine;
+}
+
+function resolveAuthoredSourceTarget(statement) {
+  const callNames = Array.isArray(statement?.call_names) ? statement.call_names : [];
+  for (const name of callNames) {
+    const root = String(name || "").split(".")[0];
+    if (debugNotebookManifest.authoredDefinitions.has(root)) {
+      const target = debugNotebookManifest.authoredDefinitions.get(root);
+      return {
+        name: root,
+        cell_id: target.cell_id,
+        line: target.line,
+        location_label: debugCellLabel(target.cell_id, target.line),
+      };
+    }
+  }
+  return null;
 }
 
 function nextExecutableLine(cellId, currentLine) {
@@ -355,10 +501,14 @@ function updateDebugState(nextState = {}) {
         }]
       : []
   );
-  const state = {
+const state = {
     status: String(nextState.status || "idle"),
     reason: String(nextState.reason || ""),
     paused: ["paused", "running", "exception"].includes(String(nextState.status || "idle")),
+    owner_cell_id: Number.isFinite(nextState.owner_cell_id)
+      ? nextState.owner_cell_id
+      : (Number.isFinite(activeDebugPlan?.cellId) ? activeDebugPlan.cellId : null),
+    preview_mode: Boolean(nextState.preview_mode),
     paused_cell_id: Number.isFinite(nextState.paused_cell_id) ? nextState.paused_cell_id : null,
     paused_line: Number.isFinite(nextState.paused_line) ? nextState.paused_line : null,
     current_location_label: currentLocationLabel,
@@ -400,6 +550,8 @@ async function startDebugSession(payload = {}) {
     reason: "Paused on entry",
     paused_cell_id: cellId,
     paused_line: line,
+    locals: Array.isArray(activeDebugPlan?.lastLocals) ? activeDebugPlan.lastLocals : [],
+    preview_mode: false,
     note: "Worker debug session prepared.",
   });
 }
@@ -483,7 +635,10 @@ async function continueDebugSession() {
   const outputs = [];
   while (activeDebugPlan.statementIndex < activeDebugPlan.statements.length) {
     const statement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
-    activeDebugPlan.previewTarget = null;
+    const skipPreview = activeDebugPlan.previewTarget?.statementIndex === activeDebugPlan.statementIndex;
+    if (skipPreview) {
+      activeDebugPlan.previewTarget = null;
+    }
     if (activeDebugPlan.statementIndex > 0 && breakpoints.has(statement.lineno)) {
       return {
         state: updateDebugState({
@@ -491,7 +646,49 @@ async function continueDebugSession() {
           reason: "Paused at breakpoint",
           paused_cell_id: cellId,
           paused_line: statement.lineno,
+          locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
+          preview_mode: false,
           note: "Paused at the next breakpoint in the current cell.",
+        }),
+        outputs,
+      };
+    }
+    const target = await resolveAuthoredCallTarget(statement);
+    if (!skipPreview && target && breakpointLines(target.cell_id).length) {
+      const pauseLine = targetPauseLine(target);
+      const previewLocals = await previewLocalsForTarget(activeDebugPlan, statement, target);
+      activeDebugPlan.previewTarget = {
+        statementIndex: activeDebugPlan.statementIndex,
+        target: {
+          ...target,
+          line: pauseLine,
+          location_label: debugCellLabel(target.cell_id, pauseLine),
+        },
+      };
+      return {
+        state: updateDebugState({
+          status: "paused",
+          reason: "Paused at called-cell breakpoint",
+          preview_mode: true,
+          paused_cell_id: target.cell_id,
+          paused_line: pauseLine,
+          current_location_label: debugCellLabel(target.cell_id, pauseLine),
+          frames: [
+            {
+              cell_id: target.cell_id,
+              line: pauseLine,
+              location_label: debugCellLabel(target.cell_id, pauseLine),
+              locals: previewLocals,
+            },
+            {
+              cell_id: activeDebugPlan.cellId,
+              line: statement.lineno,
+              location_label: debugCellLabel(activeDebugPlan.cellId, statement.lineno),
+              locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
+            },
+          ],
+          selected_frame_index: 0,
+          note: `About to enter authored function with breakpoint: ${target.name}`,
         }),
         outputs,
       };
@@ -499,18 +696,24 @@ async function continueDebugSession() {
     const statementResult = await executePlannedStatement(activeDebugPlan, activeDebugPlan.statementIndex);
     outputs.push(statementResult);
     if (!statementResult?.ok) {
+      const pauseFrame = authoredFrameLocation(statementResult?.frames);
+      const selectedFrameIndex = authoredFrameSelectionIndex(statementResult?.frames);
       activeDebugPlan = null;
       return {
         state: updateDebugState({
           status: "exception",
           reason: "Exception paused",
-          paused_cell_id: cellId,
-          paused_line: statement.lineno,
+          preview_mode: false,
+          paused_cell_id: pauseFrame?.cellId ?? cellId,
+          paused_line: pauseFrame?.line ?? statement.lineno,
+          frames: Array.isArray(statementResult?.frames) ? statementResult.frames : [],
+          selected_frame_index: selectedFrameIndex,
           note: statementResult.error || "Statement execution failed.",
         }),
         outputs,
       };
     }
+    activeDebugPlan.lastLocals = Array.isArray(statementResult?.locals) ? statementResult.locals : activeDebugPlan.lastLocals;
     activeDebugPlan.statementIndex += 1;
   }
   activeDebugPlan = null;
@@ -540,6 +743,7 @@ async function stepIntoDebugSession() {
       state: updateDebugState({
         status: "completed",
         reason: "Completed",
+        preview_mode: false,
         paused_cell_id: null,
         paused_line: null,
         note: "Reached the end of the current authored cell.",
@@ -551,33 +755,69 @@ async function stepIntoDebugSession() {
   if (!activeDebugPlan.previewTarget) {
     const target = await resolveAuthoredCallTarget(statement);
     if (target) {
+      const pauseLine = targetPauseLine(target);
+      const previewLocals = await previewLocalsForTarget(activeDebugPlan, statement, target);
       activeDebugPlan.previewTarget = {
         statementIndex: activeDebugPlan.statementIndex,
-        target,
+        target: {
+          ...target,
+          line: pauseLine,
+          location_label: debugCellLabel(target.cell_id, pauseLine),
+        },
       };
       return {
         state: updateDebugState({
           status: "paused",
           reason: "Step Into Preview",
+          preview_mode: true,
           paused_cell_id: target.cell_id,
-          paused_line: target.line,
-          current_location_label: target.location_label,
+          paused_line: pauseLine,
+          current_location_label: debugCellLabel(target.cell_id, pauseLine),
+          frames: [
+            {
+              cell_id: target.cell_id,
+              line: pauseLine,
+              location_label: debugCellLabel(target.cell_id, pauseLine),
+              locals: previewLocals,
+            },
+            {
+              cell_id: activeDebugPlan.cellId,
+              line: statement.lineno,
+              location_label: debugCellLabel(activeDebugPlan.cellId, statement.lineno),
+              locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
+            },
+          ],
+          selected_frame_index: 0,
+          note: `Authored function entry preview: ${target.name}`,
+        }),
+        outputs: [],
+      };
+    }
+    const sourceTarget = resolveAuthoredSourceTarget(statement);
+    if (sourceTarget) {
+      activeDebugPlan.previewTarget = {
+        statementIndex: activeDebugPlan.statementIndex,
+        target: null,
+        kind: "missing-runtime-definition",
+      };
+      return {
+        state: updateDebugState({
+          status: "paused",
+          reason: "Step Into Preview",
+          preview_mode: true,
+          paused_cell_id: activeDebugPlan.cellId,
+          paused_line: statement.lineno,
+          current_location_label: debugCellLabel(activeDebugPlan.cellId, statement.lineno),
           frames: [
             {
               cell_id: activeDebugPlan.cellId,
               line: statement.lineno,
               location_label: debugCellLabel(activeDebugPlan.cellId, statement.lineno),
-              locals: [],
-            },
-            {
-              cell_id: target.cell_id,
-              line: target.line,
-              location_label: target.location_label,
-              locals: [],
+              locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
             },
           ],
-          selected_frame_index: 1,
-          note: `Authored function entry preview: ${target.name}`,
+          selected_frame_index: 0,
+          note: `Authored source exists for ${sourceTarget.name}, but it is not defined in runtime state yet.`,
         }),
         outputs: [],
       };
@@ -587,18 +827,24 @@ async function stepIntoDebugSession() {
   }
   const statementResult = await executePlannedStatement(activeDebugPlan, activeDebugPlan.statementIndex);
   if (!statementResult?.ok) {
+    const pauseFrame = authoredFrameLocation(statementResult?.frames);
+    const selectedFrameIndex = authoredFrameSelectionIndex(statementResult?.frames);
     activeDebugPlan = null;
     return {
       state: updateDebugState({
         status: "exception",
         reason: "Exception paused",
-        paused_cell_id: activeDebugPlan?.cellId || null,
-        paused_line: statement?.lineno || null,
+        preview_mode: false,
+        paused_cell_id: pauseFrame?.cellId ?? activeDebugPlan?.cellId ?? null,
+        paused_line: pauseFrame?.line ?? statement?.lineno ?? null,
+        frames: Array.isArray(statementResult?.frames) ? statementResult.frames : [],
+        selected_frame_index: selectedFrameIndex,
         note: statementResult.error || "Statement execution failed.",
       }),
       outputs: [statementResult],
     };
   }
+  activeDebugPlan.lastLocals = Array.isArray(statementResult?.locals) ? statementResult.locals : activeDebugPlan.lastLocals;
   activeDebugPlan.statementIndex += 1;
   const nextStatement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
   if (nextStatement) {
@@ -608,6 +854,8 @@ async function stepIntoDebugSession() {
         reason: "Stepped",
         paused_cell_id: activeDebugPlan.cellId,
         paused_line: nextStatement.lineno,
+        locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
+        preview_mode: false,
         note: "Advanced to the next top-level statement in the current cell.",
       }),
       outputs: [statementResult],
@@ -618,6 +866,7 @@ async function stepIntoDebugSession() {
     state: updateDebugState({
       status: "completed",
       reason: "Completed",
+      preview_mode: false,
       paused_cell_id: null,
       paused_line: null,
       note: "Reached the end of the current authored cell.",
@@ -643,6 +892,7 @@ async function stepOverDebugSession() {
       state: updateDebugState({
         status: "completed",
         reason: "Completed",
+        preview_mode: false,
         paused_cell_id: null,
         paused_line: null,
         note: "Reached the end of the current authored cell.",
@@ -653,19 +903,24 @@ async function stepOverDebugSession() {
   const statement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
   const statementResult = await executePlannedStatement(activeDebugPlan, activeDebugPlan.statementIndex);
   if (!statementResult?.ok) {
+    const pauseFrame = authoredFrameLocation(statementResult?.frames);
+    const selectedFrameIndex = authoredFrameSelectionIndex(statementResult?.frames);
     activeDebugPlan = null;
     return {
       state: updateDebugState({
         status: "exception",
         reason: "Exception paused",
-        paused_cell_id: activeDebugPlan?.cellId || null,
-        paused_line: statement?.lineno || null,
+        preview_mode: false,
+        paused_cell_id: pauseFrame?.cellId ?? activeDebugPlan?.cellId ?? null,
+        paused_line: pauseFrame?.line ?? statement?.lineno ?? null,
         frames: Array.isArray(statementResult?.frames) ? statementResult.frames : [],
+        selected_frame_index: selectedFrameIndex,
         note: statementResult.error || "Statement execution failed.",
       }),
       outputs: [statementResult],
     };
   }
+  activeDebugPlan.lastLocals = Array.isArray(statementResult?.locals) ? statementResult.locals : activeDebugPlan.lastLocals;
   activeDebugPlan.statementIndex += 1;
   const nextStatement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
   if (nextStatement) {
@@ -675,6 +930,8 @@ async function stepOverDebugSession() {
         reason: "Step Over",
         paused_cell_id: activeDebugPlan.cellId,
         paused_line: nextStatement.lineno,
+        locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
+        preview_mode: false,
         note: "Stepped over the current statement.",
       }),
       outputs: [statementResult],
@@ -685,6 +942,7 @@ async function stepOverDebugSession() {
     state: updateDebugState({
       status: "completed",
       reason: "Completed",
+      preview_mode: false,
       paused_cell_id: null,
       paused_line: null,
       note: "Reached the end of the current authored cell.",
@@ -698,6 +956,7 @@ function stopDebugSession() {
   return updateDebugState({
     status: "idle",
     reason: "",
+    preview_mode: false,
     paused_cell_id: null,
     paused_line: null,
     note: "Debug session stopped.",
@@ -750,6 +1009,7 @@ async function installNotebookHelpers() {
 import ast
 import base64
 import __main__
+import inspect
 import json
 import os
 from pywhole_bridge import push_output_json
@@ -933,8 +1193,21 @@ def _pywhole_debug_resolve_authored_targets(names_json):
     names = json.loads(names_json or "[]")
     namespace = __main__.__dict__
     targets = []
+
+    def _resolve_name(name):
+        current = namespace
+        value = None
+        for index, part in enumerate(str(name).split(".")):
+            if index == 0:
+                value = current.get(part)
+            else:
+                value = getattr(value, part, None)
+            if value is None:
+                return None
+        return value
+
     for name in names:
-        value = namespace.get(name)
+        value = _resolve_name(name)
         code = getattr(value, "__code__", None)
         if code is None:
             continue
@@ -947,6 +1220,75 @@ def _pywhole_debug_resolve_authored_targets(names_json):
             "line": int(getattr(code, "co_firstlineno", 1)),
         })
     return targets
+
+def _pywhole_debug_preview_locals(source, filename, target_name):
+    namespace = __main__.__dict__
+    tree = ast.parse(source, mode="exec")
+    target_call = None
+
+    def _call_name(node):
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            parts = []
+            current = node
+            while isinstance(current, ast.Attribute):
+                parts.append(current.attr)
+                current = current.value
+            if isinstance(current, ast.Name):
+                parts.append(current.id)
+                return ".".join(reversed(parts))
+        return None
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and _call_name(getattr(node, "func", None)) == target_name:
+            target_call = node
+            break
+
+    if target_call is None:
+        return {"locals": []}
+
+    compiled = compile(ast.Expression(target_call.func), filename, "eval")
+    func = eval(compiled, namespace, namespace)
+    signature = inspect.signature(func)
+
+    args = [
+        eval(compile(ast.Expression(argument), filename, "eval"), namespace, namespace)
+        for argument in target_call.args
+    ]
+    kwargs = {}
+    for keyword in target_call.keywords:
+        if keyword.arg is None:
+            mapping = eval(compile(ast.Expression(keyword.value), filename, "eval"), namespace, namespace)
+            kwargs.update(dict(mapping))
+        else:
+            kwargs[keyword.arg] = eval(
+                compile(ast.Expression(keyword.value), filename, "eval"),
+                namespace,
+                namespace,
+            )
+
+    try:
+        bound = signature.bind_partial(*args, **kwargs)
+    except Exception:
+        return {"locals": []}
+
+    locals_payload = []
+    for name, value in bound.arguments.items():
+        try:
+            value_type = type(value).__name__
+        except Exception:
+            value_type = "unknown"
+        value_repr = _pywhole_safe_repr(value, 120)
+        locals_payload.append({
+            "name": str(name),
+            "type": value_type,
+            "value": value_repr,
+            "summary": value_repr,
+            "detail_kind": "text",
+            "detail": _pywhole_safe_repr(value, 4000),
+        })
+    return {"locals": locals_payload}
 
 def _pywhole_debug_exception_payload(exc):
     import traceback

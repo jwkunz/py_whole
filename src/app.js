@@ -57,6 +57,8 @@ const notebookState = {
     active: false,
     status: "idle",
     reason: "",
+    ownerCellId: null,
+    previewMode: false,
     pausedCellId: null,
     pausedLine: null,
     currentLocationLabel: "",
@@ -220,17 +222,30 @@ function selectedDebugFrame() {
   return notebookState.debug.frames[Math.max(0, Math.min(index, notebookState.debug.frames.length - 1))] || null;
 }
 
+function isDebugPreviewPause() {
+  return Boolean(notebookState.debug.previewMode);
+}
+
 function activeDebugCellId() {
+  if (isDebugPreviewPause() && Number.isFinite(notebookState.debug.pausedCellId)) {
+    return notebookState.debug.pausedCellId;
+  }
   const frameCellId = debugFrameCellId(selectedDebugFrame());
   return Number.isFinite(frameCellId) ? frameCellId : notebookState.debug.pausedCellId;
 }
 
 function activeDebugLineNumber() {
+  if (isDebugPreviewPause() && Number.isFinite(notebookState.debug.pausedLine)) {
+    return notebookState.debug.pausedLine;
+  }
   const frameLine = debugFrameLineNumber(selectedDebugFrame());
   return Number.isFinite(frameLine) ? frameLine : notebookState.debug.pausedLine;
 }
 
 function activeDebugLocationLabel() {
+  if (isDebugPreviewPause() && notebookState.debug.currentLocationLabel) {
+    return notebookState.debug.currentLocationLabel;
+  }
   const frame = selectedDebugFrame();
   if (frame?.location_label || frame?.locationLabel) {
     return String(frame.location_label || frame.locationLabel);
@@ -261,6 +276,20 @@ function activeDebugVariables() {
     }));
 }
 
+function debugFrameSignature(frame) {
+  if (!frame || typeof frame !== "object") {
+    return "";
+  }
+  const cellId = debugFrameCellId(frame);
+  const line = debugFrameLineNumber(frame);
+  const label = String(frame.location_label || frame.locationLabel || frame.filename || frame.name || "");
+  return JSON.stringify({
+    cellId: Number.isFinite(cellId) ? cellId : null,
+    line: Number.isFinite(line) ? line : null,
+    label,
+  });
+}
+
 function currentNotebookDebugPayload(notebook = activeNotebook()) {
   if (!notebook) {
     return {
@@ -280,6 +309,13 @@ function currentNotebookDebugPayload(notebook = activeNotebook()) {
       })),
     breakpointsByCell: { ...(notebookState.debug.breakpointsByCell || {}) },
   };
+}
+
+function syncWorkerDebugNotebookManifest(notebook = activeNotebook()) {
+  if (!runtimeAdapter.useWorkerRuntime() || !notebookState.runtimeReady || !notebook) {
+    return;
+  }
+  void runtimeAdapter.configureDebugNotebook(currentNotebookDebugPayload(notebook));
 }
 
 function breakpointLinesForCell(cellId) {
@@ -1931,9 +1967,21 @@ function debugStateStatusLabel(status) {
 
 function syncDebugStateFromRuntime(runtimeState) {
   const nextState = runtimeState && typeof runtimeState === "object" ? runtimeState : {};
+  const previousFrames = Array.isArray(notebookState.debug.frames) ? notebookState.debug.frames : [];
+  const previousSelectedFrame = previousFrames[Math.max(0, Math.min(
+    Number.isInteger(notebookState.debug.selectedFrameIndex) ? notebookState.debug.selectedFrameIndex : 0,
+    Math.max(0, previousFrames.length - 1),
+  ))] || null;
+  const previousSelectedSignature = debugFrameSignature(previousSelectedFrame);
   notebookState.debug.status = String(nextState.status || "idle");
   notebookState.debug.reason = String(nextState.reason || "");
   notebookState.debug.active = ["paused", "running", "exception"].includes(notebookState.debug.status);
+  notebookState.debug.ownerCellId = Number.isFinite(nextState.owner_cell_id)
+    ? nextState.owner_cell_id
+    : (Number.isFinite(nextState.ownerCellId) ? nextState.ownerCellId : null);
+  notebookState.debug.previewMode = Boolean(
+    nextState.preview_mode ?? nextState.previewMode ?? false,
+  );
   notebookState.debug.pausedCellId = Number.isFinite(nextState.paused_cell_id)
     ? nextState.paused_cell_id
     : (Number.isFinite(nextState.pausedCellId) ? nextState.pausedCellId : null);
@@ -1944,9 +1992,20 @@ function syncDebugStateFromRuntime(runtimeState) {
     nextState.current_location_label || nextState.currentLocationLabel || "",
   );
   notebookState.debug.frames = Array.isArray(nextState.frames) ? nextState.frames : [];
-  notebookState.debug.selectedFrameIndex = Number.isFinite(nextState.selected_frame_index)
-    ? nextState.selected_frame_index
-    : (Number.isFinite(nextState.selectedFrameIndex) ? nextState.selectedFrameIndex : 0);
+  const hasExplicitSelectedFrame = Number.isFinite(nextState.selected_frame_index)
+    || Number.isFinite(nextState.selectedFrameIndex);
+  if (hasExplicitSelectedFrame) {
+    notebookState.debug.selectedFrameIndex = Number.isFinite(nextState.selected_frame_index)
+      ? nextState.selected_frame_index
+      : nextState.selectedFrameIndex;
+  } else if (previousSelectedSignature && notebookState.debug.frames.length) {
+    const preservedIndex = notebookState.debug.frames.findIndex(
+      (frame) => debugFrameSignature(frame) === previousSelectedSignature,
+    );
+    notebookState.debug.selectedFrameIndex = preservedIndex >= 0 ? preservedIndex : 0;
+  } else {
+    notebookState.debug.selectedFrameIndex = 0;
+  }
   if (notebookState.debug.selectedFrameIndex >= notebookState.debug.frames.length) {
     notebookState.debug.selectedFrameIndex = 0;
   }
@@ -2039,6 +2098,10 @@ function syncExecutionUi() {
       button.disabled = !canInterrupt;
     }
   }
+
+  document.querySelectorAll(".panel-toggle").forEach((button) => {
+    button.disabled = notebookState.debug.active;
+  });
 
   for (const control of [
     document.getElementById("menu-debug-cell"),
@@ -3170,6 +3233,9 @@ function renderDocumentTabs() {
 }
 
 function setActiveDocument(type, id) {
+  if (notebookState.debug.active) {
+    return;
+  }
   if (type === "file") {
     const linkedNotebook = notebookForFileId(id);
     if (linkedNotebook) {
@@ -3194,6 +3260,9 @@ function setActiveDocument(type, id) {
 }
 
 function closeActiveFileTab(fileId) {
+  if (notebookState.debug.active) {
+    return;
+  }
   if (notebookState.selectedWorkspaceFileId !== fileId) {
     return;
   }
@@ -3289,6 +3358,7 @@ function buildWorkspaceTree(files) {
 }
 
 function renderWorkspaceTreeNodes(tree, parentPath = "", depth = 0) {
+  const locked = notebookState.execution.busy || notebookState.debug.active;
   return Array.from(tree.entries()).map(([name, entry]) => {
     if (entry.type === "directory") {
       const directoryPath = joinWorkspacePath(parentPath, name);
@@ -3302,6 +3372,7 @@ function renderWorkspaceTreeNodes(tree, parentPath = "", depth = 0) {
       title.className = "workspace-directory-title";
       title.style.paddingLeft = `${0.45 + depth * 0.9}rem`;
       title.textContent = `${collapsed ? "▸" : "▾"}  ${name}`;
+      title.disabled = locked;
       title.addEventListener("click", () => toggleDirectoryCollapsed(directoryPath));
 
       const children = document.createElement("div");
@@ -3325,6 +3396,7 @@ function renderWorkspaceTreeNodes(tree, parentPath = "", depth = 0) {
     title.type = "button";
     title.className = "workspace-file-label";
     title.textContent = file.name;
+    title.disabled = locked;
     title.addEventListener("click", () => selectWorkspaceFile(file.id));
 
     const meta = document.createElement("span");
@@ -3343,6 +3415,7 @@ function renderWorkspaceTreeNodes(tree, parentPath = "", depth = 0) {
     exportButton.type = "button";
     exportButton.className = "secondary";
     exportButton.textContent = "Export";
+    exportButton.disabled = locked;
     exportButton.addEventListener("click", (event) => {
       event.stopPropagation();
       exportWorkspaceFile(file.id);
@@ -3352,6 +3425,7 @@ function renderWorkspaceTreeNodes(tree, parentPath = "", depth = 0) {
     deleteButton.type = "button";
     deleteButton.className = "danger";
     deleteButton.textContent = "Delete";
+    deleteButton.disabled = locked;
     deleteButton.addEventListener("click", (event) => {
       event.stopPropagation();
       deleteWorkspaceFile(file.id);
@@ -3361,6 +3435,7 @@ function renderWorkspaceTreeNodes(tree, parentPath = "", depth = 0) {
     renameButton.type = "button";
     renameButton.className = "secondary";
     renameButton.textContent = isLinkedNotebookFile(file) ? "Rename Notebook" : "Rename";
+    renameButton.disabled = locked;
     renameButton.addEventListener("click", (event) => {
       event.stopPropagation();
       renameWorkspaceFile(file.id);
@@ -3370,6 +3445,7 @@ function renderWorkspaceTreeNodes(tree, parentPath = "", depth = 0) {
     moveButton.type = "button";
     moveButton.className = "secondary";
     moveButton.textContent = "Move";
+    moveButton.disabled = locked;
     moveButton.addEventListener("click", (event) => {
       event.stopPropagation();
       moveWorkspaceFile(file.id);
@@ -3379,6 +3455,7 @@ function renderWorkspaceTreeNodes(tree, parentPath = "", depth = 0) {
     duplicateButton.type = "button";
     duplicateButton.className = "secondary";
     duplicateButton.textContent = "Duplicate";
+    duplicateButton.disabled = locked;
     duplicateButton.addEventListener("click", (event) => {
       event.stopPropagation();
       duplicateWorkspaceFile(file.id);
@@ -3388,6 +3465,7 @@ function renderWorkspaceTreeNodes(tree, parentPath = "", depth = 0) {
     copyPathButton.type = "button";
     copyPathButton.className = "secondary";
     copyPathButton.textContent = "Copy Path";
+    copyPathButton.disabled = locked;
     copyPathButton.addEventListener("click", (event) => {
       event.stopPropagation();
       void copyTextToClipboard(quotedWorkspacePath(file));
@@ -3397,6 +3475,7 @@ function renderWorkspaceTreeNodes(tree, parentPath = "", depth = 0) {
     insertPathButton.type = "button";
     insertPathButton.className = "secondary";
     insertPathButton.textContent = "Insert Path";
+    insertPathButton.disabled = locked;
     insertPathButton.addEventListener("click", (event) => {
       event.stopPropagation();
       const inserted = insertTextIntoActiveEditor(quotedWorkspacePath(file));
@@ -3407,6 +3486,7 @@ function renderWorkspaceTreeNodes(tree, parentPath = "", depth = 0) {
     loadSnippetButton.type = "button";
     loadSnippetButton.className = "secondary";
     loadSnippetButton.textContent = "Load Snippet";
+    loadSnippetButton.disabled = locked;
     loadSnippetButton.addEventListener("click", (event) => {
       event.stopPropagation();
       const inserted = insertTextIntoActiveEditor(workspaceLoadSnippet(file));
@@ -3423,6 +3503,7 @@ function renderWorkspaceTreeNodes(tree, parentPath = "", depth = 0) {
       editButton.type = "button";
       editButton.className = "secondary";
       editButton.textContent = isLikelyTextFile(file) ? "Open" : "Preview";
+      editButton.disabled = locked;
       editButton.addEventListener("click", (event) => {
         event.stopPropagation();
         selectWorkspaceFile(file.id);
@@ -3600,6 +3681,9 @@ function quickOpenEntries() {
 }
 
 function executeQuickOpenEntry(entry) {
+  if (notebookState.debug.active) {
+    return;
+  }
   if (entry.type === "command") {
     if (entry.id === "new-notebook") {
       createNewNotebook();
@@ -3712,6 +3796,9 @@ function renderQuickOpenResults(query = "") {
 }
 
 function openQuickOpen() {
+  if (notebookState.debug.active) {
+    return;
+  }
   const dialog = document.getElementById("quick-open-dialog");
   const input = document.getElementById("quick-open-input");
   if (!dialog || !input || typeof dialog.showModal !== "function") {
@@ -3724,7 +3811,7 @@ function openQuickOpen() {
 }
 
 function showPanel(panelId) {
-  if (!panelId) {
+  if (!panelId || notebookState.debug.active) {
     return;
   }
   notebookState.panelVisibility[panelId] = false;
@@ -3732,6 +3819,9 @@ function showPanel(panelId) {
 }
 
 function openConsole() {
+  if (notebookState.debug.active) {
+    return;
+  }
   showPanel("terminal-output");
   document.getElementById("terminal-input")?.focus();
 }
@@ -3752,6 +3842,9 @@ function applyPanelVisibility() {
 }
 
 function selectWorkspaceFile(fileId) {
+  if (notebookState.debug.active) {
+    return;
+  }
   const file = notebookState.workspace.files.find((entry) => entry.id === fileId);
   if (!file) {
     return;
@@ -3848,6 +3941,10 @@ function renderVariableViewer(variables) {
     notebookState.selectedVariableName = "";
   }
 
+  if (!notebookState.selectedVariableName && notebookState.debug.active) {
+    notebookState.selectedVariableName = variables[0]?.name || "";
+  }
+
   container.replaceChildren(
     ...variables.map((variable) => {
       const item = document.createElement("div");
@@ -3883,9 +3980,11 @@ function renderVariableDetail(detail) {
   if (!detail) {
     const empty = document.createElement("div");
     empty.className = "variable-detail-card";
-    empty.textContent = notebookState.runtimeReady
-      ? "Select a variable to inspect it."
-      : "Initialize runtime to inspect variable details.";
+    empty.textContent = notebookState.debug.active
+      ? "No variable details for the selected frame."
+      : (notebookState.runtimeReady
+        ? "Select a variable to inspect it."
+        : "Initialize runtime to inspect variable details.");
     container.replaceChildren(empty);
     return;
   }
@@ -4513,6 +4612,7 @@ function renderNotebook() {
           statusNode.textContent = "Editing";
           markdownPreviewBlock.classList.add("is-hidden");
         }
+        syncWorkerDebugNotebookManifest(activeNotebook());
         scheduleAutosave();
       };
       const runCellFromEditor = (advanceFocus) => {
@@ -4603,6 +4703,7 @@ function addCodeCellWithSource(source = "") {
   const cell = createCodeCell(source);
   notebook.cells.push(cell);
   notebook.updatedAt = new Date().toISOString();
+  syncWorkerDebugNotebookManifest(notebook);
   renderNotebook();
   scheduleAutosave();
   renderDebugViewer();
@@ -4616,6 +4717,7 @@ function addMarkdownCell() {
   }
   notebook.cells.push(createMarkdownCell("# Markdown cell\n\nDocument your work here."));
   notebook.updatedAt = new Date().toISOString();
+  syncWorkerDebugNotebookManifest(notebook);
   renderNotebook();
   scheduleAutosave();
 }
@@ -4652,6 +4754,7 @@ function insertCellBelow(cellId) {
 
   notebook.cells.splice(index + 1, 0, newCell);
   notebook.updatedAt = new Date().toISOString();
+  syncWorkerDebugNotebookManifest(notebook);
   renderNotebook();
   notebookState.focusedCellId = newCell.id;
   focusCellEditor(newCell.id);
@@ -4812,6 +4915,7 @@ function duplicateCell(cellId) {
   const duplicate = cloneCell(notebook.cells[index]);
   notebook.cells.splice(index + 1, 0, duplicate);
   notebook.updatedAt = new Date().toISOString();
+  syncWorkerDebugNotebookManifest(notebook);
   renderNotebook();
   notebookState.focusedCellId = duplicate.id;
   focusCellEditor(duplicate.id);
@@ -4833,6 +4937,7 @@ function deleteCell(cellId) {
   const fallbackCell = notebook.cells[index] || notebook.cells[index - 1] || null;
   notebookState.focusedCellId = fallbackCell ? fallbackCell.id : null;
   notebook.updatedAt = new Date().toISOString();
+  syncWorkerDebugNotebookManifest(notebook);
   renderNotebook();
   persistDestructiveChange();
 }
@@ -4943,6 +5048,8 @@ function stopDebugSession(message = "Debug session stopped") {
   notebookState.debug.active = false;
   notebookState.debug.status = "idle";
   notebookState.debug.reason = "";
+  notebookState.debug.ownerCellId = null;
+  notebookState.debug.previewMode = false;
   notebookState.debug.pausedCellId = null;
   notebookState.debug.pausedLine = null;
   notebookState.debug.currentLocationLabel = "";
@@ -4953,6 +5060,7 @@ function stopDebugSession(message = "Debug session stopped") {
   renderNotebook();
   scheduleAutosave();
   renderDebugViewer();
+  void refreshVariableViewer();
 }
 
 function formatDebugCellSummary(cell) {
@@ -5016,6 +5124,9 @@ function selectedNotebookCell(notebook = activeNotebook()) {
 }
 
 function selectNotebookCellByOffset(offset) {
+  if (notebookState.debug.active) {
+    return;
+  }
   const notebook = activeNotebook();
   const selected = selectedNotebookCell(notebook);
   if (!notebook || !selected) {
@@ -5049,6 +5160,7 @@ function insertCellAbove(cellId) {
   notebook.cells.splice(index, 0, newCell);
   notebook.updatedAt = new Date().toISOString();
   notebookState.focusedCellId = newCell.id;
+  syncWorkerDebugNotebookManifest(notebook);
   renderNotebook();
   focusCellEditor(newCell.id);
   scheduleAutosave();
@@ -5073,6 +5185,7 @@ async function runCellAndInsertBelow(cellId) {
   notebook.cells.splice(currentIndex + 1, 0, newCell);
   notebook.updatedAt = new Date().toISOString();
   notebookState.focusedCellId = newCell.id;
+  syncWorkerDebugNotebookManifest(notebook);
   renderNotebook();
   focusCellEditor(newCell.id);
   scheduleAutosave();
@@ -5091,6 +5204,9 @@ function toggleSelectedCellType(cellType) {
 }
 
 function handleNotebookCommandShortcut(event) {
+  if (notebookState.debug.active) {
+    return false;
+  }
   const active = activeDocument();
   const target = event.target;
   const isEditableTarget = target instanceof HTMLTextAreaElement
@@ -5342,6 +5458,7 @@ function moveCell(cellId, offset) {
   const [cell] = notebook.cells.splice(index, 1);
   notebook.cells.splice(targetIndex, 0, cell);
   notebook.updatedAt = new Date().toISOString();
+  syncWorkerDebugNotebookManifest(notebook);
   renderNotebook();
   scheduleAutosave();
 }
@@ -5366,6 +5483,7 @@ function toggleCellType(cellId) {
   }
 
   notebook.updatedAt = new Date().toISOString();
+  syncWorkerDebugNotebookManifest(notebook);
   renderNotebook();
   scheduleAutosave();
 }
@@ -5523,6 +5641,15 @@ async function startDebugSession(preferredCellId = notebookState.focusedCellId) 
     return;
   }
 
+  if (!notebookState.runtimeReady) {
+    try {
+      await runtimeAdapter.initialize();
+    } catch (error) {
+      updateKernelState(`Runtime initialization failed: ${String(error.message || error)}`);
+      return;
+    }
+  }
+
   if (runtimeAdapter.useWorkerRuntime() && notebookState.runtimeReady) {
     try {
       startCell.outputs = [];
@@ -5547,12 +5674,12 @@ async function startDebugSession(preferredCellId = notebookState.focusedCellId) 
 
 async function continueDebugSession(stopAtCellId = null) {
   const notebook = activeNotebook();
-  if (!notebook || notebookState.execution.busy || !notebookState.debug.pausedCellId) {
+  if (!notebook || notebookState.execution.busy || !notebookState.debug.pausedCellId || notebookState.debug.status === "exception") {
     return;
   }
 
   if (runtimeAdapter.useWorkerRuntime() && notebookState.runtimeReady) {
-    const currentCell = notebook.cells.find((cell) => cell.id === notebookState.debug.pausedCellId);
+    const currentCell = notebook.cells.find((cell) => cell.id === (notebookState.debug.ownerCellId || notebookState.debug.pausedCellId));
     if (!currentCell) {
       stopDebugSession("Debug session stopped");
       return;
@@ -5650,12 +5777,12 @@ async function continueDebugSession(stopAtCellId = null) {
 
 async function stepDebugSession() {
   const notebook = activeNotebook();
-  if (!notebook || notebookState.execution.busy || !notebookState.debug.pausedCellId) {
+  if (!notebook || notebookState.execution.busy || !notebookState.debug.pausedCellId || notebookState.debug.status === "exception") {
     return;
   }
 
   if (runtimeAdapter.useWorkerRuntime() && notebookState.runtimeReady) {
-    const cell = notebook.cells.find((entry) => entry.id === notebookState.debug.pausedCellId);
+    const cell = notebook.cells.find((entry) => entry.id === (notebookState.debug.ownerCellId || notebookState.debug.pausedCellId));
     if (!cell) {
       stopDebugSession("Debug session stopped");
       return;
@@ -5728,12 +5855,12 @@ async function stepDebugSession() {
 
 async function stepOverDebugSession() {
   const notebook = activeNotebook();
-  if (!notebook || notebookState.execution.busy || !notebookState.debug.pausedCellId) {
+  if (!notebook || notebookState.execution.busy || !notebookState.debug.pausedCellId || notebookState.debug.status === "exception") {
     return;
   }
 
   if (runtimeAdapter.useWorkerRuntime() && notebookState.runtimeReady) {
-    const cell = notebook.cells.find((entry) => entry.id === notebookState.debug.pausedCellId)
+    const cell = notebook.cells.find((entry) => entry.id === (notebookState.debug.ownerCellId || notebookState.debug.pausedCellId))
       || notebook.cells.find((entry) => entry.id === activeDebugCellId());
     if (!cell) {
       stopDebugSession("Debug session stopped");
@@ -5791,7 +5918,12 @@ function handleGlobalDebugShortcut(event) {
 
   if (event.key === "F10") {
     event.preventDefault();
-    if (notebookState.debug.active && notebookState.debug.pausedCellId && !notebookState.execution.busy) {
+    if (
+      notebookState.debug.active
+      && notebookState.debug.pausedCellId
+      && !notebookState.execution.busy
+      && notebookState.debug.status !== "exception"
+    ) {
       void stepOverDebugSession();
     }
     return true;
@@ -5799,7 +5931,12 @@ function handleGlobalDebugShortcut(event) {
 
   if (event.key === "F11") {
     event.preventDefault();
-    if (notebookState.debug.active && notebookState.debug.pausedCellId && !notebookState.execution.busy) {
+    if (
+      notebookState.debug.active
+      && notebookState.debug.pausedCellId
+      && !notebookState.execution.busy
+      && notebookState.debug.status !== "exception"
+    ) {
       void stepDebugSession();
     }
     return true;
@@ -5811,7 +5948,9 @@ function handleGlobalDebugShortcut(event) {
       return true;
     }
     if (notebookState.debug.active) {
-      void continueDebugSession();
+      if (notebookState.debug.status !== "exception") {
+        void continueDebugSession();
+      }
       return true;
     }
     if (!isEditableTarget) {
@@ -6043,6 +6182,9 @@ function wireEvents() {
     .addEventListener("click", revertSelectedWorkspaceFile);
   document.querySelectorAll(".panel-toggle").forEach((button) => {
     button.addEventListener("click", () => {
+      if (notebookState.debug.active) {
+        return;
+      }
       const targetId = button.dataset.panelTarget;
       const target = targetId ? document.getElementById(targetId) : null;
       if (!target) {
