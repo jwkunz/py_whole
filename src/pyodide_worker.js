@@ -324,6 +324,30 @@ function firstExecutableLine(cellId) {
   return executableLineNumbers(cell.source)[0] || 1;
 }
 
+function statementIndexForLine(statements, lineNumber) {
+  const entries = Array.isArray(statements) ? statements : [];
+  if (!entries.length) {
+    return 0;
+  }
+  if (!Number.isFinite(lineNumber)) {
+    return 0;
+  }
+  const containingIndex = entries.findIndex((statement) =>
+    Number.isFinite(statement?.lineno)
+      && Number.isFinite(statement?.end_lineno)
+      && lineNumber >= statement.lineno
+      && lineNumber <= statement.end_lineno
+  );
+  if (containingIndex >= 0) {
+    return containingIndex;
+  }
+  const nextIndex = entries.findIndex((statement) => Number.isFinite(statement?.lineno) && statement.lineno >= lineNumber);
+  if (nextIndex >= 0) {
+    return nextIndex;
+  }
+  return Math.max(0, entries.length - 1);
+}
+
 async function buildDebugPlan(cellId) {
   const cell = debugCellById(cellId);
   if (!cell || !pyodide) {
@@ -378,11 +402,14 @@ json.dumps(plan)
 `);
   const statements = JSON.parse(planJson || "[]");
   const initialLocals = await snapshotDebugLocals();
+  const previousLine = debugNotebookManifest.pausedCellId === cellId
+    ? debugNotebookManifest.pausedLine
+    : null;
   return {
     cellId,
     source: String(cell.source || ""),
     statements,
-    statementIndex: 0,
+    statementIndex: statementIndexForLine(statements, previousLine),
     previewTarget: null,
     skipPreviewStatementIndex: null,
     lastLocals: initialLocals,
