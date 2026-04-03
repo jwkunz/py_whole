@@ -983,6 +983,7 @@ async function stepIntoDebugSession() {
   activeDebugPlan.statementIndex += 1;
   const nextStatement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
   if (nextStatement) {
+    const frames = await snapshotCurrentDebugStack();
     return {
       state: updateDebugState({
         status: "paused",
@@ -991,6 +992,7 @@ async function stepIntoDebugSession() {
         paused_cell_id: activeDebugPlan.cellId,
         paused_line: nextStatement.lineno,
         locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
+        frames: Array.isArray(frames) ? frames : [],
         preview_mode: false,
         note: "Advanced to the next top-level statement in the current cell.",
       }),
@@ -1065,6 +1067,7 @@ async function stepOverDebugSession() {
   activeDebugPlan.statementIndex += 1;
   const nextStatement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
   if (nextStatement) {
+    const frames = await snapshotCurrentDebugStack();
     return {
       state: updateDebugState({
         status: "paused",
@@ -1073,6 +1076,7 @@ async function stepOverDebugSession() {
         paused_cell_id: activeDebugPlan.cellId,
         paused_line: nextStatement.lineno,
         locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
+        frames: Array.isArray(frames) ? frames : [],
         preview_mode: false,
         note: "Stepped over the current statement.",
       }),
