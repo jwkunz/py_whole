@@ -1328,6 +1328,7 @@ def _pywhole_debug_snapshot_namespace():
 
 def _pywhole_debug_current_stack():
     frames = []
+    seen = set()
     current = inspect.currentframe()
     if current is not None:
         current = current.f_back
@@ -1335,12 +1336,15 @@ def _pywhole_debug_current_stack():
         code = current.f_code
         filename = getattr(code, "co_filename", "")
         if str(filename).startswith("pywhole://notebook/"):
-            frames.append({
-                "name": code.co_name,
-                "filename": filename,
-                "line": current.f_lineno,
-                "locals": _pywhole_debug_serialize_locals(current.f_locals),
-            })
+            signature = (str(filename), int(current.f_lineno), str(code.co_name))
+            if signature not in seen:
+                seen.add(signature)
+                frames.append({
+                    "name": code.co_name,
+                    "filename": filename,
+                    "line": current.f_lineno,
+                    "locals": _pywhole_debug_serialize_locals(current.f_locals),
+                })
         current = current.f_back
     frames.reverse()
     return frames
