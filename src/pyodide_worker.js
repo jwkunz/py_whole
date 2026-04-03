@@ -1025,8 +1025,10 @@ async function stepIntoDebugSession() {
   }
   activeDebugPlan.lastLocals = Array.isArray(statementResult?.locals) ? statementResult.locals : activeDebugPlan.lastLocals;
   activeDebugPlan.statementIndex += 1;
+  const firstTracedFrames = Array.isArray(statementResult?.first_frames) ? statementResult.first_frames : [];
   const tracedFrames = Array.isArray(statementResult?.frames) ? statementResult.frames : [];
-  const tracedPauseFrame = authoredFrameLocation(tracedFrames);
+  const stepIntoFrames = firstTracedFrames.length ? firstTracedFrames : tracedFrames;
+  const tracedPauseFrame = authoredFrameLocation(stepIntoFrames);
   if (tracedPauseFrame && Number.isFinite(tracedPauseFrame.cellId) && tracedPauseFrame.cellId !== activeDebugPlan.cellId) {
     return {
       state: updateDebugState({
@@ -1036,8 +1038,8 @@ async function stepIntoDebugSession() {
         preview_mode: false,
         paused_cell_id: tracedPauseFrame.cellId,
         paused_line: tracedPauseFrame.line,
-        frames: tracedFrames,
-        selected_frame_index: authoredFrameSelectionIndex(tracedFrames),
+        frames: stepIntoFrames,
+        selected_frame_index: authoredFrameSelectionIndex(stepIntoFrames),
         note: "Execution stepped into authored notebook code within the previous statement.",
       }),
       outputs: [statementResult],
@@ -1441,14 +1443,19 @@ def _pywhole_debug_exec_statement(source, filename, is_expression):
     namespace = __main__.__dict__
     tree = ast.parse(source, mode="exec")
     previous_trace = sys.gettrace()
+    first_frames = []
     last_frames = []
 
     def _trace(frame, event, arg):
+        nonlocal first_frames
         nonlocal last_frames
         code = frame.f_code
         current_filename = getattr(code, "co_filename", "")
         if event in ("call", "line") and str(current_filename).startswith("pywhole://notebook/"):
-            last_frames = _pywhole_debug_stack_from_frame(frame)
+            stack = _pywhole_debug_stack_from_frame(frame)
+            if not first_frames:
+                first_frames = stack
+            last_frames = stack
         return _trace
 
     try:
@@ -1466,6 +1473,7 @@ def _pywhole_debug_exec_statement(source, filename, is_expression):
     return {
         "ok": True,
         "locals": _pywhole_debug_snapshot_namespace(),
+        "first_frames": first_frames,
         "frames": last_frames,
     }
 
