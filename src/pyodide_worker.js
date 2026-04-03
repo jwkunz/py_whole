@@ -947,6 +947,15 @@ async function stepIntoDebugSession() {
     }
     const sourceTarget = resolveAuthoredSourceTarget(statement);
     if (sourceTarget) {
+      const runtimeFrames = await snapshotCurrentDebugStack();
+      const previewFrames = Array.isArray(runtimeFrames) && runtimeFrames.length
+        ? runtimeFrames
+        : [{
+            cell_id: activeDebugPlan.cellId,
+            line: statement.lineno,
+            location_label: debugCellLabel(activeDebugPlan.cellId, statement.lineno),
+            locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
+          }];
       activeDebugPlan.previewTarget = {
         statementIndex: activeDebugPlan.statementIndex,
         target: null,
@@ -961,14 +970,7 @@ async function stepIntoDebugSession() {
           paused_cell_id: activeDebugPlan.cellId,
           paused_line: statement.lineno,
           current_location_label: debugCellLabel(activeDebugPlan.cellId, statement.lineno),
-          frames: [
-            {
-              cell_id: activeDebugPlan.cellId,
-              line: statement.lineno,
-              location_label: debugCellLabel(activeDebugPlan.cellId, statement.lineno),
-              locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
-            },
-          ],
+          frames: previewFrames,
           selected_frame_index: 0,
           note: `Authored source exists for ${sourceTarget.name}, but it is not defined in runtime state yet.`,
         }),
