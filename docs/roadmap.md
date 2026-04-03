@@ -1,113 +1,97 @@
-# Roadmap
+# Project Progress Summary
 
-## Status
+## Product State
 
-The original spike roadmap is effectively complete through the core product proof:
+Py-Whole is now a working offline notebook workbench rather than a speculative concept. The product supports notebook authoring, workspace file management, offline Python execution, and both single-file and static-hosted packaging.
 
-- single-file offline packaging exists
-- embedded Pyodide execution works offline
-- notebook editing, execution, markdown, and persistence exist
-- `.ipynb` import and export exist
-- a multi-document workspace and workspace file model exist
-- variable, watch, terminal, debugger, runtime diagnostics, and package-help surfaces exist
+## Delivered So Far
 
-That means the project is no longer in the "prove the concept" stage. The next work should focus on hardening, validation, and narrowing the gap between "implemented" and "reliably usable."
+### Notebook and Workspace
 
-## Current Product Audit
-
-### Completed Foundation
-
-- Single HTML build pipeline with embedded JavaScript, CSS, Pyodide runtime, and bundled package assets
-- Offline Python execution in modern browsers
-- Notebook cell editing, insertion, deletion, duplication, reordering, and execution
-- Markdown cells with rendered preview and math presentation
-- Browser-storage persistence and recovery
+- code and markdown cells with notebook-style execution flows
 - `.ipynb` import and export
-- Multi-notebook workspace shell with document tabs and launcher
-- Workspace file import, export, preview, filtering, editing, rename, move, and folder creation
-- Runtime diagnostics and package inventory/help UI
-- Variable viewer, variable inspector, watch expressions, and a browser Python console
-- Initial debugger flow with breakpoints, pause/continue/step mechanics, and keyboard shortcuts
+- multi-document notebook/file workspace
+- project file tree as the main navigation model
+- text-file preview and editing
+- rename, move, duplicate, delete, save, save-as, and export flows
+- linked notebook-backed `.ipynb` behavior in the workspace tree
 
-### Still Partial
+### Runtime
 
-- Scientific package expansion beyond the currently bundled subset
-- Rich-output coverage beyond the currently supported MIME and plotting paths
-- Terminal ergonomics and clear product framing for the console model
-- Debugging depth relative to the original VS Code-style aspiration
-- Regression-tested confidence in the newest menubar and workbench refactors
+- offline Pyodide execution
+- bundled scientific package set including:
+  - `numpy`
+  - `scipy`
+  - `pandas`
+  - `sympy`
+  - `matplotlib`
+  - `tqdm`
+  - `opencv`
+  - `xarray`
+  - `statsmodels`
+  - `networkx`
+  - `scikit-image`
+  - `bokeh`
+  - `mpmath`
+- explicit package loading from the UI
+- runtime diagnostics and report insertion/copy flows
+- browser terminal surface
 
-### Known Constraints
+### Packaging and Hosting
 
-- The app remains primarily implemented in one large file: `src/app.js`
-- Runtime restart is still a full page reload because Pyodide does not support a second runtime instance in the same global scope
-- The package UI lists some desired packages that are not yet embedded in the shipped runtime
-- Some recently moved UI surfaces still need validation after the workbench refactor
+- single-file release build
+- lightweight debug single-file release build
+- static web package build for normal site hosting
+- website-hostable distribution with no single asset near GitHub's 100 MB per-file limit
 
-## Phase 10: Verification and Product Hardening
+### UI and Product Framing
 
-Objective: turn the current feature-rich prototype into a more reliable and internally coherent offline notebook environment.
+- branded splash screen and logo treatment
+- syntax highlighting preview
+- top-ribbon menubar model
+- resizable three-column layout
+- help and legal dialogs
+- versioned footer and support contact
 
-### Deliverables
+### Experimental Debug Mode
 
-- End-to-end verification of all top-menubar actions and launcher actions
-- Regression pass for `.ipynb` import/export and workspace file import/export flows
-- Validation of multi-cell `matplotlib` workflows, especially repeated `plt.show()`
-- Validation of the bottom `Debug` and `Terminal` utility panels after their relocation
-- UX cleanup for side-rail density, notebook readability, and panel placement
-- Clear documentation of what is truly bundled versus only planned in the package inventory
-- Cleanup of stale docs so requirements, roadmap, README, and handoff notes describe the current product accurately
+- worker-owned runtime/debug state
+- line breakpoint gutter
+- continue / step into / step over / stop controls
+- locals and stack inspection surfaces
+- traced breakpoint handling
 
-### Exit Criteria
+This work was substantial, but it is still not a full debugger. The product now deliberately frames it as experimental.
 
-- The primary notebook, workspace, runtime, and diagnostics workflows all pass manual verification without known blocking regressions
-- The UI layout feels intentional and coherent on both desktop and narrow-width layouts
-- The package/help surfaces do not overstate runtime capabilities
-- The docs describe the current product and the next set of engineering priorities accurately
+## Recent Direction Changes
 
-## Proposed Work Breakdown For Phase 10
+- save behavior moved away from per-edit autosave
+- destructive operations persist immediately
+- duplicated notebook/file actions were simplified
+- the watch panel was removed in favor of the current debug surface
+- help and legal content moved into the top ribbon
+- deployment support expanded from only single-file release to also include static hosting
 
-### 1. Functional Verification
+## Practical Current Assessment
 
-- File menu actions
-- Cell menu actions
-- Kernel menu actions
-- Help/runtime actions
-- Launcher shortcuts
-- Quick-open and command-palette actions
-- Notebook import/export
-- Workspace file import/export/editing
-- Execute the manual pass captured in `docs/phase10_checklist.md`
+The product is in a usable state for:
 
-### 2. Runtime and Plotting Validation
+- offline notebook editing
+- browser-based Python execution
+- local project-file workflows
+- static-site hosting
+- product demo and portfolio deployment
 
-- Re-test runtime initialization and restart flows
-- Re-test runtime diagnostics output and report insertion
-- Re-test `matplotlib` figure capture across multiple cells
-- Re-test package demo snippets against the actually bundled runtime set
+The product is still weaker in:
 
-### 3. UX Tightening
+- debugger depth
+- modularity and maintainability of the main app source
+- deeper verification across all browser/deployment combinations
 
-- Reduce visual crowding in the side rails
-- Tighten notebook document typography and vertical spacing
-- Re-evaluate whether `Watch` belongs in the right rail or in the bottom utility area
-- Simplify launcher presentation now that the workbench is the primary product surface
+## Likely Next Work
 
-### 4. Documentation and Product Framing
-
-- Keep requirements as the broad product target
-- Use the roadmap as the live implementation status and near-term plan
-- Keep handoff notes focused on architecture, constraints, and immediate validation work
-- Update README so it describes the current workbench instead of an initial scaffold
-- Keep `docs/phase10_checklist.md` as the working verification script for this iteration
-
-## After Phase 10
-
-If Phase 10 closes cleanly, the next decision should be made from a position of verified behavior rather than speculative scope. At that point the likely branches are:
-
-- broaden the bundled scientific stack
-- deepen rich-output compatibility
-- improve debugger fidelity
-- refactor `src/app.js` into maintainable modules
-
-That choice should be driven by the results of the verification pass rather than by the original spike roadmap.
+- product hardening and regression validation
+- targeted UI polish
+- deployment validation on the website host
+- possible debugger cleanup or scope reduction rather than deeper debugger investment
+- eventual refactor of large app logic out of `src/app.js`
