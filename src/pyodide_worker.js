@@ -1422,10 +1422,15 @@ def _pywhole_capture_specific_figure(figure):
 def _pywhole_patch_matplotlib():
     try:
         import matplotlib
-        matplotlib.use("Agg", force=True)
-        matplotlib.rcParams["backend"] = "Agg"
         import matplotlib.pyplot as plt
-        plt.switch_backend("Agg")
+        if getattr(plt, "_pywhole_patched", False):
+            return
+        current_backend = str(matplotlib.get_backend() or "")
+        if current_backend.lower() != "agg":
+            matplotlib.use("Agg", force=True)
+            import matplotlib.pyplot as plt
+            plt.switch_backend("Agg")
+        matplotlib.rcParams["backend"] = "Agg"
         from matplotlib._pylab_helpers import Gcf
 
         def _pywhole_show(*args, **kwargs):
@@ -1455,6 +1460,7 @@ def _pywhole_patch_matplotlib():
         except Exception:
             pass
         plt.pause = lambda *args, **kwargs: None
+        plt._pywhole_patched = True
     except Exception:
         pass
 
