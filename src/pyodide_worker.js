@@ -17,6 +17,7 @@ let debugNotebookManifest = {
   breakpointsByCell: {},
   status: "idle",
   reason: "",
+  previewMode: false,
   pausedCellId: null,
   pausedLine: null,
   selectedFrameIndex: 0,
@@ -224,6 +225,7 @@ function setDebugNotebookManifest(payload = {}) {
       : {},
     status: "idle",
     reason: "",
+    previewMode: false,
     pausedCellId: null,
     pausedLine: null,
     selectedFrameIndex: 0,
@@ -607,6 +609,7 @@ const state = {
   };
   debugNotebookManifest.status = state.status;
   debugNotebookManifest.reason = state.reason;
+  debugNotebookManifest.previewMode = state.preview_mode;
   debugNotebookManifest.pausedCellId = state.paused_cell_id;
   debugNotebookManifest.pausedLine = state.paused_line;
   debugNotebookManifest.selectedFrameIndex = state.selected_frame_index;
@@ -621,7 +624,7 @@ function configureDebugNotebook(payload = {}) {
       status: debugNotebookManifest.status || "paused",
       reason: debugNotebookManifest.reason || "Paused",
       owner_cell_id: activeDebugPlan.cellId,
-      preview_mode: false,
+      preview_mode: debugNotebookManifest.previewMode,
       paused_cell_id: debugNotebookManifest.pausedCellId ?? activeDebugPlan.cellId,
       paused_line: debugNotebookManifest.pausedLine ?? activeDebugPlan.statements?.[activeDebugPlan.statementIndex]?.lineno ?? firstExecutableLine(activeDebugPlan.cellId),
       selected_frame_index: debugNotebookManifest.selectedFrameIndex || 0,
