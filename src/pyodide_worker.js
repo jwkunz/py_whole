@@ -901,18 +901,21 @@ async function continueDebugSession() {
         && Number.isFinite(pauseFrame.line)
         && breakpointLines(pauseFrame.cellId).includes(pauseFrame.line),
       );
-    if (pauseFrame && Number.isFinite(pauseFrame.cellId) && pauseFrame.cellId !== cellId && hitBreakpoint) {
+    if (pauseFrame && Number.isFinite(pauseFrame.cellId) && hitBreakpoint) {
+      const sameCell = pauseFrame.cellId === cellId;
       return {
         state: updateDebugState({
           status: "paused",
-          reason: "Paused at called-cell breakpoint",
+          reason: sameCell ? "Paused at breakpoint" : "Paused at called-cell breakpoint",
           owner_cell_id: cellId,
           preview_mode: false,
           paused_cell_id: pauseFrame.cellId,
           paused_line: pauseFrame.line,
           frames: tracedFrames,
           selected_frame_index: authoredFrameSelectionIndex(tracedFrames),
-          note: "Execution reached a breakpoint in authored notebook code within the previous statement.",
+          note: sameCell
+            ? "Execution reached a breakpoint within the previous statement."
+            : "Execution reached a breakpoint in authored notebook code within the previous statement.",
         }),
         outputs,
       };
@@ -1062,22 +1065,24 @@ async function stepIntoDebugSession() {
     ? breakpointFrames
     : (firstTracedFrames.length ? firstTracedFrames : tracedFrames);
   const tracedPauseFrame = authoredFrameLocation(stepIntoFrames);
-  const hitCalledBreakpoint = breakpointFrames.length > 0
+  const hitTracedBreakpoint = breakpointFrames.length > 0
     && tracedPauseFrame
-    && Number.isFinite(tracedPauseFrame.cellId)
-    && tracedPauseFrame.cellId !== activeDebugPlan.cellId;
-  if (tracedPauseFrame && hitCalledBreakpoint) {
+    && Number.isFinite(tracedPauseFrame.cellId);
+  if (tracedPauseFrame && hitTracedBreakpoint) {
+    const sameCell = tracedPauseFrame.cellId === activeDebugPlan.cellId;
     return {
       state: updateDebugState({
         status: "paused",
-        reason: "Paused at called-cell breakpoint",
+        reason: sameCell ? "Paused at breakpoint" : "Paused at called-cell breakpoint",
         owner_cell_id: activeDebugPlan.cellId,
         preview_mode: false,
         paused_cell_id: tracedPauseFrame.cellId,
         paused_line: tracedPauseFrame.line,
         frames: stepIntoFrames,
         selected_frame_index: authoredFrameSelectionIndex(stepIntoFrames),
-        note: "Execution reached a breakpoint in authored notebook code within the previous statement.",
+        note: sameCell
+          ? "Execution reached a breakpoint within the previous statement."
+          : "Execution reached a breakpoint in authored notebook code within the previous statement.",
       }),
       outputs: [statementResult],
     };
@@ -1187,23 +1192,27 @@ async function stepOverDebugSession() {
   const breakpointFrames = tracedBreakpointFrames(statementResult);
   const tracedFrames = breakpointFrames.length ? breakpointFrames : tracedLastFrames(statementResult);
   const tracedPauseFrame = authoredFrameLocation(tracedFrames);
-  const hitCalledBreakpoint = (breakpointFrames.length > 0 || Boolean(tracedPauseFrame
+  const hitTracedBreakpoint = tracedPauseFrame
     && Number.isFinite(tracedPauseFrame.cellId)
-    && tracedPauseFrame.cellId !== activeDebugPlan.cellId
-    && Number.isFinite(tracedPauseFrame.line)
-    && breakpointLines(tracedPauseFrame.cellId).includes(tracedPauseFrame.line)));
-  if (hitCalledBreakpoint) {
+    && (breakpointFrames.length > 0 || Boolean(
+      Number.isFinite(tracedPauseFrame.line)
+      && breakpointLines(tracedPauseFrame.cellId).includes(tracedPauseFrame.line),
+    ));
+  if (hitTracedBreakpoint) {
+    const sameCell = tracedPauseFrame.cellId === activeDebugPlan.cellId;
     return {
       state: updateDebugState({
         status: "paused",
-        reason: "Paused at called-cell breakpoint",
+        reason: sameCell ? "Paused at breakpoint" : "Paused at called-cell breakpoint",
         owner_cell_id: activeDebugPlan.cellId,
         preview_mode: false,
         paused_cell_id: tracedPauseFrame.cellId,
         paused_line: tracedPauseFrame.line,
         frames: tracedFrames,
         selected_frame_index: authoredFrameSelectionIndex(tracedFrames),
-        note: "Step Over reached a breakpoint in authored notebook code within the previous statement.",
+        note: sameCell
+          ? "Step Over reached a breakpoint within the previous statement."
+          : "Step Over reached a breakpoint in authored notebook code within the previous statement.",
       }),
       outputs: [statementResult],
     };
