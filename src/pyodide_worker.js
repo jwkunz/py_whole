@@ -937,6 +937,7 @@ async function stepIntoDebugSession() {
   }
   const statementResult = await executePlannedStatement(activeDebugPlan, activeDebugPlan.statementIndex);
   if (!statementResult?.ok) {
+    const ownerCellId = activeDebugPlan?.cellId ?? null;
     const pauseFrame = authoredFrameLocation(statementResult?.frames);
     const selectedFrameIndex = authoredFrameSelectionIndex(statementResult?.frames);
     activeDebugPlan = null;
@@ -944,9 +945,9 @@ async function stepIntoDebugSession() {
       state: updateDebugState({
         status: "exception",
         reason: "Exception paused",
-        owner_cell_id: activeDebugPlan?.cellId ?? null,
+        owner_cell_id: ownerCellId,
         preview_mode: false,
-        paused_cell_id: pauseFrame?.cellId ?? activeDebugPlan?.cellId ?? null,
+        paused_cell_id: pauseFrame?.cellId ?? ownerCellId,
         paused_line: pauseFrame?.line ?? statement?.lineno ?? null,
         frames: Array.isArray(statementResult?.frames) ? statementResult.frames : [],
         selected_frame_index: selectedFrameIndex,
@@ -1017,6 +1018,7 @@ async function stepOverDebugSession() {
   const statement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
   const statementResult = await executePlannedStatement(activeDebugPlan, activeDebugPlan.statementIndex);
   if (!statementResult?.ok) {
+    const ownerCellId = activeDebugPlan?.cellId ?? null;
     const pauseFrame = authoredFrameLocation(statementResult?.frames);
     const selectedFrameIndex = authoredFrameSelectionIndex(statementResult?.frames);
     activeDebugPlan = null;
@@ -1024,9 +1026,9 @@ async function stepOverDebugSession() {
       state: updateDebugState({
         status: "exception",
         reason: "Exception paused",
-        owner_cell_id: activeDebugPlan?.cellId ?? null,
+        owner_cell_id: ownerCellId,
         preview_mode: false,
-        paused_cell_id: pauseFrame?.cellId ?? activeDebugPlan?.cellId ?? null,
+        paused_cell_id: pauseFrame?.cellId ?? ownerCellId,
         paused_line: pauseFrame?.line ?? statement?.lineno ?? null,
         frames: Array.isArray(statementResult?.frames) ? statementResult.frames : [],
         selected_frame_index: selectedFrameIndex,
