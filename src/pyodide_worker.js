@@ -865,6 +865,26 @@ async function continueDebugSession() {
     }
     activeDebugPlan.lastLocals = Array.isArray(statementResult?.locals) ? statementResult.locals : activeDebugPlan.lastLocals;
     activeDebugPlan.statementIndex += 1;
+    if (activeDebugPlan.statementIndex < activeDebugPlan.statements.length) {
+      const tracedFrames = Array.isArray(statementResult?.frames) ? statementResult.frames : [];
+      const pauseFrame = authoredFrameLocation(tracedFrames);
+      if (pauseFrame && Number.isFinite(pauseFrame.cellId) && pauseFrame.cellId !== cellId) {
+        return {
+          state: updateDebugState({
+            status: "paused",
+            reason: "Paused after authored call",
+            owner_cell_id: cellId,
+            preview_mode: false,
+            paused_cell_id: pauseFrame.cellId,
+            paused_line: pauseFrame.line,
+            frames: tracedFrames,
+            selected_frame_index: authoredFrameSelectionIndex(tracedFrames),
+            note: "Execution reached authored notebook code within the previous statement.",
+          }),
+          outputs,
+        };
+      }
+    }
   }
   activeDebugPlan = null;
   return {
