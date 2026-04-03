@@ -46,8 +46,7 @@ function parseWorkerDebugFilename(filename) {
 
 function authoredFrameLocation(frames) {
   const entries = Array.isArray(frames) ? frames : [];
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const frame = entries[index];
+  for (const frame of entries) {
     const parsed = parseWorkerDebugFilename(frame?.filename || "");
     const cellId = Number.isFinite(frame?.cell_id) ? frame.cell_id : (parsed?.cellId ?? null);
     const line = Number.isFinite(frame?.line) ? frame.line : null;
@@ -63,7 +62,7 @@ function authoredFrameLocation(frames) {
 
 function authoredFrameSelectionIndex(frames) {
   const entries = Array.isArray(frames) ? frames : [];
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
+  for (let index = 0; index < entries.length; index += 1) {
     const frame = entries[index];
     const parsed = parseWorkerDebugFilename(frame?.filename || "");
     const cellId = Number.isFinite(frame?.cell_id) ? frame.cell_id : (parsed?.cellId ?? null);
@@ -1517,6 +1516,7 @@ def _pywhole_debug_exception_payload(exc):
             "locals": locals_payload,
         })
         tb = tb.tb_next
+    frames.reverse()
 
     return {
         "ok": False,
