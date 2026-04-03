@@ -1131,6 +1131,30 @@ async function stepOverDebugSession() {
   }
   activeDebugPlan.lastLocals = Array.isArray(statementResult?.locals) ? statementResult.locals : activeDebugPlan.lastLocals;
   activeDebugPlan.statementIndex += 1;
+  const tracedFrames = Array.isArray(statementResult?.frames) ? statementResult.frames : [];
+  const tracedPauseFrame = authoredFrameLocation(tracedFrames);
+  const tracedPauseBreakpoints = tracedPauseFrame ? breakpointLines(tracedPauseFrame.cellId) : [];
+  const hitCalledBreakpoint = tracedPauseFrame
+    && Number.isFinite(tracedPauseFrame.cellId)
+    && tracedPauseFrame.cellId !== activeDebugPlan.cellId
+    && Number.isFinite(tracedPauseFrame.line)
+    && tracedPauseBreakpoints.includes(tracedPauseFrame.line);
+  if (hitCalledBreakpoint) {
+    return {
+      state: updateDebugState({
+        status: "paused",
+        reason: "Paused at called-cell breakpoint",
+        owner_cell_id: activeDebugPlan.cellId,
+        preview_mode: false,
+        paused_cell_id: tracedPauseFrame.cellId,
+        paused_line: tracedPauseFrame.line,
+        frames: tracedFrames,
+        selected_frame_index: authoredFrameSelectionIndex(tracedFrames),
+        note: "Step Over reached a breakpoint in authored notebook code within the previous statement.",
+      }),
+      outputs: [statementResult],
+    };
+  }
   const nextStatement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
   if (nextStatement) {
     const frames = Array.isArray(statementResult?.frames) && statementResult.frames.length
