@@ -1005,7 +1005,9 @@ async function stepIntoDebugSession() {
   activeDebugPlan.statementIndex += 1;
   const nextStatement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
   if (nextStatement) {
-    const frames = await snapshotCurrentDebugStack();
+    const frames = Array.isArray(statementResult?.frames) && statementResult.frames.length
+      ? statementResult.frames
+      : await snapshotCurrentDebugStack();
     return {
       state: updateDebugState({
         status: "paused",
@@ -1089,7 +1091,9 @@ async function stepOverDebugSession() {
   activeDebugPlan.statementIndex += 1;
   const nextStatement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
   if (nextStatement) {
-    const frames = await snapshotCurrentDebugStack();
+    const frames = Array.isArray(statementResult?.frames) && statementResult.frames.length
+      ? statementResult.frames
+      : await snapshotCurrentDebugStack();
     return {
       state: updateDebugState({
         status: "paused",
@@ -1182,6 +1186,7 @@ import __main__
 import inspect
 import json
 import os
+import sys
 from pywhole_bridge import push_output_json
 
 os.environ["MPLBACKEND"] = "Agg"
@@ -1345,11 +1350,12 @@ def _pywhole_debug_snapshot_namespace():
     return _pywhole_debug_serialize_locals(namespace)
 
 def _pywhole_debug_current_stack():
+    return _pywhole_debug_stack_from_frame(inspect.currentframe().f_back if inspect.currentframe() is not None else None)
+
+def _pywhole_debug_stack_from_frame(start_frame):
     frames = []
     seen = set()
-    current = inspect.currentframe()
-    if current is not None:
-        current = current.f_back
+    current = start_frame
     while current is not None:
         code = current.f_code
         filename = getattr(code, "co_filename", "")
@@ -1370,18 +1376,33 @@ def _pywhole_debug_exec_statement(source, filename, is_expression):
     _pywhole_patch_matplotlib()
     namespace = __main__.__dict__
     tree = ast.parse(source, mode="exec")
+    previous_trace = sys.gettrace()
+    last_frames = []
 
-    if is_expression and tree.body and isinstance(tree.body[-1], ast.Expr):
-        value = eval(compile(ast.Expression(tree.body[-1].value), filename, "eval"), namespace, namespace)
-        _pywhole_capture_display(value)
-    else:
-        exec(compile(tree, filename, "exec"), namespace, namespace)
+    def _trace(frame, event, arg):
+        nonlocal last_frames
+        code = frame.f_code
+        current_filename = getattr(code, "co_filename", "")
+        if event in ("call", "line") and str(current_filename).startswith("pywhole://notebook/"):
+            last_frames = _pywhole_debug_stack_from_frame(frame)
+        return _trace
+
+    try:
+        sys.settrace(_trace)
+        if is_expression and tree.body and isinstance(tree.body[-1], ast.Expr):
+            value = eval(compile(ast.Expression(tree.body[-1].value), filename, "eval"), namespace, namespace)
+            _pywhole_capture_display(value)
+        else:
+            exec(compile(tree, filename, "exec"), namespace, namespace)
+    finally:
+        sys.settrace(previous_trace)
 
     _pywhole_patch_matplotlib()
     _pywhole_capture_figures()
     return {
         "ok": True,
         "locals": _pywhole_debug_snapshot_namespace(),
+        "frames": last_frames,
     }
 
 def _pywhole_debug_resolve_authored_targets(names_json):
