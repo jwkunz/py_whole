@@ -855,7 +855,7 @@ async function continueDebugSession() {
       state: updateDebugState({
         status: "completed",
         reason: "Completed",
-        owner_cell_id: cellId,
+        owner_cell_id: null,
         paused_cell_id: null,
         paused_line: null,
       note: "Reached the end of the current authored cell.",
