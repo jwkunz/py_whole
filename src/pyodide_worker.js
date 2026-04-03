@@ -338,13 +338,17 @@ def _pywhole_statement_call_names(statement):
                 return ".".join(reversed(parts))
         return None
 
-    for node in ast.walk(statement):
+    def _visit(node):
         if isinstance(node, ast.Call):
             func = getattr(node, "func", None)
             name = _call_name(func)
             if name and name not in seen:
                 seen.add(name)
                 names.append(name)
+        for child in ast.iter_child_nodes(node):
+            _visit(child)
+
+    _visit(statement)
     return names
 
 for statement in tree.body:
@@ -1276,10 +1280,17 @@ def _pywhole_debug_preview_locals(source, filename, target_name):
                 return ".".join(reversed(parts))
         return None
 
-    for node in ast.walk(tree):
+    def _find_call(node):
+        nonlocal target_call
+        if target_call is not None:
+            return
         if isinstance(node, ast.Call) and _call_name(getattr(node, "func", None)) == target_name:
             target_call = node
-            break
+            return
+        for child in ast.iter_child_nodes(node):
+            _find_call(child)
+
+    _find_call(tree)
 
     if target_call is None:
         return {"locals": []}
