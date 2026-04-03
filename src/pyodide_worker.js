@@ -322,6 +322,7 @@ plan = []
 
 def _pywhole_statement_call_names(statement):
     names = []
+    seen = set()
 
     def _call_name(node):
         if isinstance(node, ast.Name):
@@ -341,9 +342,10 @@ def _pywhole_statement_call_names(statement):
         if isinstance(node, ast.Call):
             func = getattr(node, "func", None)
             name = _call_name(func)
-            if name:
+            if name and name not in seen:
+                seen.add(name)
                 names.append(name)
-    return sorted(set(names))
+    return names
 
 for statement in tree.body:
     plan.append({
@@ -412,8 +414,12 @@ async function resolveAuthoredCallTarget(statement) {
     if (!resolvedTargets.length) {
       return null;
     }
-    const withBreakpoints = resolvedTargets.find((entry) => breakpointLines(entry.cell_id).length > 0);
-    return withBreakpoints || resolvedTargets[0];
+    const breakpointTarget = resolvedTargets.find((entry) => {
+      const lines = breakpointLines(entry.cell_id);
+      return lines.some((line) => line >= entry.line);
+    });
+    const withAnyBreakpoints = resolvedTargets.find((entry) => breakpointLines(entry.cell_id).length > 0);
+    return breakpointTarget || withAnyBreakpoints || resolvedTargets[0];
   } finally {
     if (proxy && typeof proxy.destroy === "function") {
       proxy.destroy();
