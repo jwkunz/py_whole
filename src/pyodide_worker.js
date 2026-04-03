@@ -878,6 +878,7 @@ async function stepIntoDebugSession() {
       state: updateDebugState({
         status: "completed",
         reason: "Completed",
+        owner_cell_id: null,
         preview_mode: false,
         paused_cell_id: null,
         paused_line: null,
