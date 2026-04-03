@@ -17,6 +17,7 @@ let debugNotebookManifest = {
   breakpointsByCell: {},
   status: "idle",
   reason: "",
+  ownerCellId: null,
   previewMode: false,
   pausedCellId: null,
   pausedLine: null,
@@ -226,6 +227,7 @@ function setDebugNotebookManifest(payload = {}) {
       : {},
     status: "idle",
     reason: "",
+    ownerCellId: null,
     previewMode: false,
     pausedCellId: null,
     pausedLine: null,
@@ -629,6 +631,7 @@ const state = {
   };
   debugNotebookManifest.status = state.status;
   debugNotebookManifest.reason = state.reason;
+  debugNotebookManifest.ownerCellId = state.owner_cell_id;
   debugNotebookManifest.previewMode = state.preview_mode;
   debugNotebookManifest.pausedCellId = state.paused_cell_id;
   debugNotebookManifest.pausedLine = state.paused_line;
@@ -648,7 +651,7 @@ async function configureDebugNotebook(payload = {}) {
     return updateDebugState({
       status: debugNotebookManifest.status || "paused",
       reason: debugNotebookManifest.reason || "Paused",
-      owner_cell_id: activeDebugPlan.cellId,
+      owner_cell_id: debugNotebookManifest.ownerCellId ?? activeDebugPlan.cellId,
       preview_mode: debugNotebookManifest.previewMode,
       paused_cell_id: debugNotebookManifest.pausedCellId ?? activeDebugPlan.cellId,
       paused_line: debugNotebookManifest.pausedLine ?? activeDebugPlan.statements?.[activeDebugPlan.statementIndex]?.lineno ?? firstExecutableLine(activeDebugPlan.cellId),
@@ -1690,7 +1693,9 @@ async function fetchDebugState() {
   return updateDebugState({
     status: debugNotebookManifest.status,
     reason: debugNotebookManifest.reason,
-    owner_cell_id: Number.isFinite(activeDebugPlan?.cellId) ? activeDebugPlan.cellId : null,
+    owner_cell_id: Number.isFinite(debugNotebookManifest.ownerCellId)
+      ? debugNotebookManifest.ownerCellId
+      : (Number.isFinite(activeDebugPlan?.cellId) ? activeDebugPlan.cellId : null),
     preview_mode: debugNotebookManifest.previewMode,
     paused_cell_id: debugNotebookManifest.pausedCellId,
     paused_line: debugNotebookManifest.pausedLine,
