@@ -868,18 +868,22 @@ async function continueDebugSession() {
     if (activeDebugPlan.statementIndex < activeDebugPlan.statements.length) {
       const tracedFrames = Array.isArray(statementResult?.frames) ? statementResult.frames : [];
       const pauseFrame = authoredFrameLocation(tracedFrames);
-      if (pauseFrame && Number.isFinite(pauseFrame.cellId) && pauseFrame.cellId !== cellId) {
+      const pauseCellBreakpoints = pauseFrame ? breakpointLines(pauseFrame.cellId) : [];
+      const hitBreakpoint = pauseFrame
+        && Number.isFinite(pauseFrame.line)
+        && pauseCellBreakpoints.includes(pauseFrame.line);
+      if (pauseFrame && Number.isFinite(pauseFrame.cellId) && pauseFrame.cellId !== cellId && hitBreakpoint) {
         return {
           state: updateDebugState({
             status: "paused",
-            reason: "Paused after authored call",
+            reason: "Paused at called-cell breakpoint",
             owner_cell_id: cellId,
             preview_mode: false,
             paused_cell_id: pauseFrame.cellId,
             paused_line: pauseFrame.line,
             frames: tracedFrames,
             selected_frame_index: authoredFrameSelectionIndex(tracedFrames),
-            note: "Execution reached authored notebook code within the previous statement.",
+            note: "Execution reached a breakpoint in authored notebook code within the previous statement.",
           }),
           outputs,
         };
