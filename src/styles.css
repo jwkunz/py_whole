@@ -174,7 +174,7 @@ button.danger {
 .workspace-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--layout-resizer-size) minmax(228px, var(--inspector-render-width, var(--inspector-width)));
-  min-height: 100vh;
+  min-height: 0;
 }
 
 .layout-resizer {
@@ -210,6 +210,16 @@ button.danger {
 .workspace {
   padding: 1.1rem 1.4rem 2rem;
   overflow: auto;
+}
+
+.app-footer {
+  grid-column: 1 / -1;
+  padding: 0.75rem 1.25rem 0.95rem;
+  border-top: 1px solid var(--border);
+  background: rgba(7, 12, 18, 0.92);
+  color: var(--muted);
+  font-size: 0.86rem;
+  text-align: center;
 }
 
 .brand-block-sidebar h1 {
@@ -386,6 +396,39 @@ button.danger {
   padding: 1rem;
 }
 
+.app-dialog {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.app-dialog::backdrop {
+  background: rgba(3, 7, 17, 0.74);
+}
+
+.app-dialog-card {
+  width: min(860px, calc(100vw - 2rem));
+  max-height: min(84vh, 900px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+  padding: 1rem;
+}
+
+.app-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.app-dialog-header h2 {
+  margin: 0;
+}
+
 .document-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -458,6 +501,33 @@ button.danger {
 .panel-copy {
   color: var(--muted);
   line-height: 1.5;
+}
+
+.help-sections {
+  display: grid;
+  gap: 1rem;
+}
+
+.help-section {
+  padding: 0.85rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.help-section h3 {
+  margin: 0 0 0.55rem;
+}
+
+.help-list {
+  margin: 0.75rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.help-list li + li {
+  margin-top: 0.35rem;
 }
 
 .panel,

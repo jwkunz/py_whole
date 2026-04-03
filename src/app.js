@@ -3828,6 +3828,17 @@ function openQuickOpen() {
   input.focus();
 }
 
+function openAppDialog(dialogId) {
+  if (notebookState.debug.active) {
+    return;
+  }
+  const dialog = document.getElementById(dialogId);
+  if (!dialog || typeof dialog.showModal !== "function") {
+    return;
+  }
+  dialog.showModal();
+}
+
 function showPanel(panelId) {
   if (!panelId || notebookState.debug.active) {
     return;
@@ -6060,6 +6071,12 @@ function wireEvents() {
     }
   });
   bindClick("menu-clear-recovery", clearRecovery);
+  bindClick("menu-open-help", () => {
+    openAppDialog("help-dialog");
+  });
+  bindClick("menu-open-legal", () => {
+    openAppDialog("legal-dialog");
+  });
   bindClick("menu-run-runtime-diagnostics", () => {
     void runRuntimeDiagnostics();
   });
@@ -6727,7 +6744,6 @@ async function bootstrap() {
     notebookState.panelVisibility = {
       "debug-viewer": true,
       "terminal-output": true,
-      "help-support-panel": true,
     };
   }
   const workspaceFileFilterInput = document.getElementById("workspace-file-filter-input");

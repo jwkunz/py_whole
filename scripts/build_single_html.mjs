@@ -6,6 +6,7 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const srcDir = path.join(rootDir, "src");
 const distDir = path.join(rootDir, "dist");
 const outputFileName = process.env.PY_WHOLE_OUTPUT_NAME || "py_whole.html";
+const appVersion = process.env.PY_WHOLE_VERSION || loadAppVersion(rootDir);
 const bundledPackageFilter = new Set(
   String(process.env.PY_WHOLE_BUNDLED_PACKAGES || "")
     .split(",")
@@ -28,6 +29,7 @@ const faviconDataUri = loadInlineFavicon(rootDir);
 const faviconIcoDataUri = loadInlineFaviconIco(rootDir);
 
 const html = template
+  .replaceAll("__APP_VERSION__", appVersion)
   .replaceAll("__INLINE_LOGO_DATA__", logoDataUri)
   .replaceAll("__INLINE_FAVICON_SVG_DATA__", faviconSvgDataUri)
   .replaceAll("__INLINE_FAVICON_DATA__", faviconDataUri)
@@ -83,6 +85,14 @@ function loadEmbeddedRuntime(projectRoot) {
     workerBootstrap: `self.__PYWHOLE_EMBEDDED_PYODIDE__ = ${JSON.stringify(manifest)};`,
     loader: [escapeInlineScript(pyodideJs), escapeInlineScript(pyodideAsmJs)].join("\n"),
   };
+}
+
+function loadAppVersion(projectRoot) {
+  const versionPath = path.join(projectRoot, "VERSION");
+  if (!fs.existsSync(versionPath)) {
+    return "0.1.0";
+  }
+  return fs.readFileSync(versionPath, "utf8").trim() || "0.1.0";
 }
 
 function escapeInlineScript(text) {
