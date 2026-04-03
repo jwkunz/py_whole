@@ -5620,6 +5620,7 @@ function toggleLineBreakpoint(cellId, lineNumber) {
   cell.breakpoint = next.length > 0;
   notebook.updatedAt = new Date().toISOString();
   renderNotebook();
+  renderDebugViewer();
   if (runtimeAdapter.useWorkerRuntime() && notebookState.runtimeReady) {
     void runtimeAdapter.configureDebugNotebook(currentNotebookDebugPayload(notebook));
   }

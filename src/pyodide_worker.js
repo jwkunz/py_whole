@@ -207,6 +207,7 @@ function ensureParentDirectories(fsApi, filePath) {
 function setDebugNotebookManifest(payload = {}) {
   const cells = Array.isArray(payload.cells) ? payload.cells : [];
   const authoredDefinitions = new Map();
+  const previousPlan = activeDebugPlan;
   debugNotebookManifest = {
     notebookId: payload.notebookId ?? null,
     cells: cells
@@ -247,7 +248,19 @@ function setDebugNotebookManifest(payload = {}) {
       });
     }
   });
-  activeDebugPlan = null;
+  if (previousPlan && Number.isFinite(previousPlan.cellId)) {
+    const activeCell = debugNotebookManifest.cellMap.get(previousPlan.cellId);
+    if (activeCell && String(activeCell.source || "") === String(previousPlan.source || "")) {
+      activeDebugPlan = {
+        ...previousPlan,
+        previewTarget: null,
+      };
+    } else {
+      activeDebugPlan = null;
+    }
+  } else {
+    activeDebugPlan = null;
+  }
 }
 
 function findDefinitionBodyLine(source, headerLine) {
