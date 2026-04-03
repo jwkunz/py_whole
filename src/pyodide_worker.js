@@ -27,6 +27,18 @@ let debugNotebookManifest = {
 };
 let activeDebugPlan = null;
 
+function hasEmbeddedPyodideAssets() {
+  const assets = EMBEDDED_PYODIDE?.assets;
+  return Boolean(
+    EMBEDDED_PYODIDE?.available
+    && assets
+    && typeof assets === "object"
+    && assets.wasmBase64
+    && assets.stdlibBase64
+    && assets.lockFileText,
+  );
+}
+
 function workerDebugFilename(cellId) {
   const notebookId = encodeURIComponent(debugNotebookManifest.notebookId || "active");
   return `pywhole://notebook/${notebookId}/cell/${cellId}.py`;
@@ -175,7 +187,7 @@ function serveEmbeddedPyodideAsset(url) {
 }
 
 function installPyodideAssetFetch() {
-  if (!EMBEDDED_PYODIDE.available || self.__pyWholePyodideFetchInstalled) {
+  if (!hasEmbeddedPyodideAssets() || self.__pyWholePyodideFetchInstalled) {
     return;
   }
   const originalFetch = self.fetch.bind(self);

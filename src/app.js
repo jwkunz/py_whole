@@ -87,6 +87,7 @@ const notebookState = {
 let nextCellId = 1;
 const EMBEDDED_PYODIDE = globalThis.__PYWHOLE_EMBEDDED_PYODIDE__ || { available: false };
 const RUNTIME_WORKER_SOURCE = globalThis.__PYWHOLE_RUNTIME_WORKER_SOURCE__ || "";
+const RUNTIME_WORKER_URL = globalThis.__PYWHOLE_RUNTIME_WORKER_URL__ || "";
 const BUNDLED_PACKAGE_SET = new Set(EMBEDDED_PYODIDE.bundledPackages || []);
 const WORKSPACE_STORAGE_KEY = "py_whole.workspace.v1";
 const DEFAULT_PRELOADED_PACKAGES = ["numpy"];
@@ -101,6 +102,18 @@ const MIN_CENTER_WIDTH = 520;
 const LAYOUT_RESIZER_SIZE = 10;
 const MAX_AUTO_LAYOUT_GROWTH = 120;
 const AUTO_LAYOUT_GROWTH_SHARE = 0.35;
+
+function hasEmbeddedPyodideAssets() {
+  const assets = EMBEDDED_PYODIDE?.assets;
+  return Boolean(
+    EMBEDDED_PYODIDE?.available
+    && assets
+    && typeof assets === "object"
+    && assets.wasmBase64
+    && assets.stdlibBase64
+    && assets.lockFileText,
+  );
+}
 
 function setSplashStatus(message) {
   const statusNode = document.getElementById("app-splash-status");
@@ -812,7 +825,7 @@ const runtimeAdapter = {
   resetDebugStateFn: null,
 
   useWorkerRuntime() {
-    return Boolean(RUNTIME_WORKER_SOURCE);
+    return Boolean(RUNTIME_WORKER_SOURCE || RUNTIME_WORKER_URL);
   },
 
   async ensureWorker() {
@@ -822,7 +835,12 @@ const runtimeAdapter = {
     if (this.worker) {
       return this.worker;
     }
-    this.workerUrl = URL.createObjectURL(new Blob([RUNTIME_WORKER_SOURCE], { type: "text/javascript" }));
+    this.workerUrl = RUNTIME_WORKER_SOURCE
+      ? URL.createObjectURL(new Blob([RUNTIME_WORKER_SOURCE], { type: "text/javascript" }))
+      : String(RUNTIME_WORKER_URL || "");
+    if (!this.workerUrl) {
+      return null;
+    }
     this.worker = new Worker(this.workerUrl);
     this.worker.addEventListener("message", (event) => {
       const { id, ok, result, error } = event.data || {};
@@ -1627,7 +1645,7 @@ function normalizeDisplayOutputs(items) {
 }
 
 function installPyodideAssetFetch() {
-  if (!EMBEDDED_PYODIDE.available || globalThis.__pyWholePyodideFetchInstalled) {
+  if (!hasEmbeddedPyodideAssets() || globalThis.__pyWholePyodideFetchInstalled) {
     return;
   }
 
