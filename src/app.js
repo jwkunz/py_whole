@@ -4057,6 +4057,12 @@ async function refreshVariableViewer() {
   }
 
   try {
+    if (notebookState.debug.active && runtimeAdapter.useWorkerRuntime()) {
+      const runtimeState = await runtimeAdapter.fetchDebugState();
+      if (runtimeState) {
+        syncDebugStateFromRuntime(runtimeState);
+      }
+    }
     const debugVariables = activeDebugVariables();
     if (notebookState.debug.active && debugVariables) {
       renderVariableViewer(debugVariables);
