@@ -992,6 +992,7 @@ async function stepIntoDebugSession() {
 async function stepOverDebugSession() {
   if (activeDebugPlan) {
     activeDebugPlan.previewTarget = null;
+    activeDebugPlan.skipPreviewStatementIndex = null;
   }
   if (!activeDebugPlan || !Number.isFinite(activeDebugPlan.cellId)) {
     return updateDebugState({
