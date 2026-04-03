@@ -1023,6 +1023,24 @@ async function stepIntoDebugSession() {
   }
   activeDebugPlan.lastLocals = Array.isArray(statementResult?.locals) ? statementResult.locals : activeDebugPlan.lastLocals;
   activeDebugPlan.statementIndex += 1;
+  const tracedFrames = Array.isArray(statementResult?.frames) ? statementResult.frames : [];
+  const tracedPauseFrame = authoredFrameLocation(tracedFrames);
+  if (tracedPauseFrame && Number.isFinite(tracedPauseFrame.cellId) && tracedPauseFrame.cellId !== activeDebugPlan.cellId) {
+    return {
+      state: updateDebugState({
+        status: "paused",
+        reason: "Stepped into authored call",
+        owner_cell_id: activeDebugPlan.cellId,
+        preview_mode: false,
+        paused_cell_id: tracedPauseFrame.cellId,
+        paused_line: tracedPauseFrame.line,
+        frames: tracedFrames,
+        selected_frame_index: authoredFrameSelectionIndex(tracedFrames),
+        note: "Execution stepped into authored notebook code within the previous statement.",
+      }),
+      outputs: [statementResult],
+    };
+  }
   const nextStatement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
   if (nextStatement) {
     const frames = Array.isArray(statementResult?.frames) && statementResult.frames.length
