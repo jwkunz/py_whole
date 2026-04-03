@@ -436,6 +436,24 @@ async function snapshotDebugLocals() {
   }
 }
 
+async function snapshotCurrentDebugStack() {
+  if (!pyodide) {
+    return [];
+  }
+  const stackFn = pyodide.globals.get("_pywhole_debug_current_stack");
+  const proxy = stackFn();
+  try {
+    return proxy?.toJs ? proxy.toJs() : proxy;
+  } finally {
+    if (proxy && typeof proxy.destroy === "function") {
+      proxy.destroy();
+    }
+    if (stackFn && typeof stackFn.destroy === "function") {
+      stackFn.destroy();
+    }
+  }
+}
+
 async function resolveAuthoredCallTarget(statement) {
   const callNames = Array.isArray(statement?.call_names) ? statement.call_names : [];
   if (!callNames.length || !pyodide) {
@@ -617,9 +635,10 @@ const state = {
   return state;
 }
 
-function configureDebugNotebook(payload = {}) {
+async function configureDebugNotebook(payload = {}) {
   setDebugNotebookManifest(payload);
   if (activeDebugPlan && Number.isFinite(activeDebugPlan.cellId)) {
+    const frames = await snapshotCurrentDebugStack();
     return updateDebugState({
       status: debugNotebookManifest.status || "paused",
       reason: debugNotebookManifest.reason || "Paused",
@@ -627,6 +646,7 @@ function configureDebugNotebook(payload = {}) {
       preview_mode: debugNotebookManifest.previewMode,
       paused_cell_id: debugNotebookManifest.pausedCellId ?? activeDebugPlan.cellId,
       paused_line: debugNotebookManifest.pausedLine ?? activeDebugPlan.statements?.[activeDebugPlan.statementIndex]?.lineno ?? firstExecutableLine(activeDebugPlan.cellId),
+      frames: Array.isArray(frames) ? frames : [],
       selected_frame_index: debugNotebookManifest.selectedFrameIndex || 0,
       note: debugNotebookManifest.note || "Debug runtime updated.",
     });
@@ -1273,27 +1293,49 @@ def _pywhole_safe_repr(value, limit=160):
         result = result[: limit - 3] + "..."
     return result
 
-def _pywhole_debug_snapshot_namespace():
-    namespace = __main__.__dict__
-    variables = []
-    for name in sorted(namespace):
-        if name.startswith("_"):
+def _pywhole_debug_serialize_locals(scope):
+    payload = []
+    for name in sorted(scope):
+        if str(name).startswith("_"):
             continue
-        value = namespace[name]
+        value = scope[name]
         try:
             value_type = type(value).__name__
         except Exception:
             value_type = "unknown"
         value_repr = _pywhole_safe_repr(value, 120)
-        variables.append({
-            "name": name,
+        payload.append({
+            "name": str(name),
             "type": value_type,
             "value": value_repr,
             "summary": value_repr,
             "detail_kind": "text",
             "detail": _pywhole_safe_repr(value, 4000),
         })
-    return variables
+    return payload
+
+def _pywhole_debug_snapshot_namespace():
+    namespace = __main__.__dict__
+    return _pywhole_debug_serialize_locals(namespace)
+
+def _pywhole_debug_current_stack():
+    frames = []
+    current = inspect.currentframe()
+    if current is not None:
+        current = current.f_back
+    while current is not None:
+        code = current.f_code
+        filename = getattr(code, "co_filename", "")
+        if str(filename).startswith("pywhole://notebook/"):
+            frames.append({
+                "name": code.co_name,
+                "filename": filename,
+                "line": current.f_lineno,
+                "locals": _pywhole_debug_serialize_locals(current.f_locals),
+            })
+        current = current.f_back
+    frames.reverse()
+    return frames
 
 def _pywhole_debug_exec_statement(source, filename, is_expression):
     _pywhole_patch_matplotlib()
@@ -1619,6 +1661,10 @@ async function inspectVariable(name) {
   }
 }
 
+async function currentDebugStack() {
+  return snapshotCurrentDebugStack();
+}
+
 async function runDiagnostics(checks) {
   await ensurePackagesLoaded((checks || []).map(([packageName]) => packageName));
   const diagnosticsJson = await pyodide.runPythonAsync(`
@@ -1747,6 +1793,9 @@ self.onmessage = async (event) => {
       case "inspectVariable":
         result = await inspectVariable(payload?.name || "");
         break;
+      case "currentDebugStack":
+        result = await currentDebugStack();
+        break;
       case "runDiagnostics":
         result = await runDiagnostics(payload?.checks || []);
         break;
@@ -1757,7 +1806,7 @@ self.onmessage = async (event) => {
         result = pyodide ? pyodide.globals.get("_pywhole_reset_debug_state")().toJs() : null;
         break;
       case "configureDebugNotebook":
-        result = configureDebugNotebook(payload || {});
+        result = await configureDebugNotebook(payload || {});
         break;
       case "startDebugSession":
         result = await startDebugSession(payload || {});

@@ -1588,6 +1588,13 @@ def _pywhole_inspect_variable(name):
     }
   },
 
+  async currentDebugStack() {
+    if (!this.pyodide || !this.useWorkerRuntime()) {
+      return [];
+    }
+    return this.callWorker("currentDebugStack");
+  },
+
 };
 
 function normalizeDisplayOutputs(items) {
