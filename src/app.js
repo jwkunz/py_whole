@@ -5431,7 +5431,7 @@ function renderDebugViewer() {
       title: "State",
       body: [
         debugStateStatusLabel(notebookState.debug.status),
-        notebookState.debug.reason || (notebookState.debug.status === "idle" ? "Debugger idle" : ""),
+        notebookState.debug.reason || (notebookState.debug.status === "idle" ? "Experimental debugger idle" : ""),
         notebookState.debug.note || "",
       ].filter(Boolean).join("\n"),
     },
@@ -5440,7 +5440,7 @@ function renderDebugViewer() {
       body: pausedCell ? activeDebugLocationLabel() : "No active location",
     },
     {
-      title: "Call Stack",
+      title: "Current Stack",
       body: renderDebugList(stackEntries, "No active stack"),
     },
     {
@@ -5700,7 +5700,7 @@ async function startDebugSession(preferredCellId = notebookState.focusedCellId) 
   }
 
   notebookState.focusedCellId = startCell.id;
-  pauseDebugAtCell(startCell.id, `Debugger paused before cell ${startCell.id}.`);
+      pauseDebugAtCell(startCell.id, `Experimental debugger paused before cell ${startCell.id}.`);
 }
 
 async function continueDebugSession(stopAtCellId = null) {
