@@ -20,6 +20,7 @@ let debugNotebookManifest = {
   previewMode: false,
   pausedCellId: null,
   pausedLine: null,
+  frames: [],
   selectedFrameIndex: 0,
   note: "",
 };
@@ -228,6 +229,7 @@ function setDebugNotebookManifest(payload = {}) {
     previewMode: false,
     pausedCellId: null,
     pausedLine: null,
+    frames: [],
     selectedFrameIndex: 0,
     note: "",
   };
@@ -630,6 +632,7 @@ const state = {
   debugNotebookManifest.previewMode = state.preview_mode;
   debugNotebookManifest.pausedCellId = state.paused_cell_id;
   debugNotebookManifest.pausedLine = state.paused_line;
+  debugNotebookManifest.frames = state.frames;
   debugNotebookManifest.selectedFrameIndex = state.selected_frame_index;
   debugNotebookManifest.note = state.note;
   return state;
@@ -638,7 +641,10 @@ const state = {
 async function configureDebugNotebook(payload = {}) {
   setDebugNotebookManifest(payload);
   if (activeDebugPlan && Number.isFinite(activeDebugPlan.cellId)) {
-    const frames = await snapshotCurrentDebugStack();
+    const runtimeFrames = await snapshotCurrentDebugStack();
+    const frames = debugNotebookManifest.previewMode && Array.isArray(debugNotebookManifest.frames) && debugNotebookManifest.frames.length
+      ? debugNotebookManifest.frames
+      : runtimeFrames;
     return updateDebugState({
       status: debugNotebookManifest.status || "paused",
       reason: debugNotebookManifest.reason || "Paused",
