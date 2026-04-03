@@ -35,11 +35,16 @@ fs.writeFileSync(path.join(outputDir, "index.html"), html);
 const workerSource = workerTemplate
   .replace(
     "__INLINE_RUNTIME_BOOTSTRAP_WORKER__",
-    `self.__PYWHOLE_EMBEDDED_PYODIDE__ = ${JSON.stringify(runtimeManifest)};`,
+    [
+      "const __pywholeWorkerBaseUrl = new URL('./', self.location.href).href;",
+      `self.__PYWHOLE_EMBEDDED_PYODIDE__ = ${JSON.stringify(runtimeManifest)};`,
+      "self.__PYWHOLE_EMBEDDED_PYODIDE__.indexURL = new URL('./pyodide/', __pywholeWorkerBaseUrl).href;",
+      "self.__PYWHOLE_EMBEDDED_PYODIDE__.lockFileURL = new URL('./pyodide/pyodide-lock.json', __pywholeWorkerBaseUrl).href;",
+    ].join("\n"),
   )
   .replace(
     "__INLINE_RUNTIME_LOADER__",
-    `importScripts("./pyodide/pyodide.js");`,
+    `importScripts(new URL("./pyodide/pyodide.js", self.location.href).href);`,
   );
 fs.writeFileSync(path.join(outputDir, "pyodide_worker.js"), workerSource);
 
@@ -73,7 +78,7 @@ function buildHtml(input, runtimeManifestValue, version) {
     )
     .replace(
       `    <script>\n__INLINE_RUNTIME_BOOTSTRAP__\n    </script>`,
-      `    <script>\nwindow.__PYWHOLE_EMBEDDED_PYODIDE__ = ${JSON.stringify(runtimeManifestValue)};\nwindow.__PYWHOLE_RUNTIME_WORKER_URL__ = "./pyodide_worker.js";\n    </script>`,
+      `    <script>\nconst __pywholeBaseUrl = new URL("./", window.location.href).href;\nwindow.__PYWHOLE_EMBEDDED_PYODIDE__ = ${JSON.stringify(runtimeManifestValue)};\nwindow.__PYWHOLE_EMBEDDED_PYODIDE__.indexURL = new URL("./pyodide/", __pywholeBaseUrl).href;\nwindow.__PYWHOLE_EMBEDDED_PYODIDE__.lockFileURL = new URL("./pyodide/pyodide-lock.json", __pywholeBaseUrl).href;\nwindow.__PYWHOLE_RUNTIME_WORKER_URL__ = new URL("./pyodide_worker.js", __pywholeBaseUrl).href;\n    </script>`,
     )
     .replace(
       `\n    <script>\nwindow.__PYWHOLE_RUNTIME_WORKER_SOURCE__ = __INLINE_RUNTIME_WORKER_SOURCE__;\n    </script>`,
