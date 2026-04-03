@@ -586,6 +586,7 @@ async function startDebugSession(payload = {}) {
   return updateDebugState({
     status: "paused",
     reason: "Paused on entry",
+    owner_cell_id: cellId,
     paused_cell_id: cellId,
     paused_line: line,
     locals: Array.isArray(activeDebugPlan?.lastLocals) ? activeDebugPlan.lastLocals : [],
@@ -682,6 +683,7 @@ async function continueDebugSession() {
         state: updateDebugState({
           status: "paused",
           reason: "Paused at breakpoint",
+          owner_cell_id: cellId,
           paused_cell_id: cellId,
           paused_line: statement.lineno,
           locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
@@ -708,6 +710,7 @@ async function continueDebugSession() {
         state: updateDebugState({
           status: "paused",
           reason: "Paused at called-cell breakpoint",
+          owner_cell_id: activeDebugPlan.cellId,
           preview_mode: true,
           paused_cell_id: target.cell_id,
           paused_line: pauseLine,
@@ -742,6 +745,7 @@ async function continueDebugSession() {
         state: updateDebugState({
           status: "exception",
           reason: "Exception paused",
+          owner_cell_id: cellId,
           preview_mode: false,
           paused_cell_id: pauseFrame?.cellId ?? cellId,
           paused_line: pauseFrame?.line ?? statement.lineno,
@@ -757,11 +761,12 @@ async function continueDebugSession() {
   }
   activeDebugPlan = null;
   return {
-    state: updateDebugState({
-      status: "completed",
-      reason: "Completed",
-      paused_cell_id: null,
-      paused_line: null,
+      state: updateDebugState({
+        status: "completed",
+        reason: "Completed",
+        owner_cell_id: cellId,
+        paused_cell_id: null,
+        paused_line: null,
       note: "Reached the end of the current authored cell.",
     }),
     outputs,
@@ -809,6 +814,7 @@ async function stepIntoDebugSession() {
         state: updateDebugState({
           status: "paused",
           reason: "Step Into Preview",
+          owner_cell_id: activeDebugPlan.cellId,
           preview_mode: true,
           paused_cell_id: target.cell_id,
           paused_line: pauseLine,
@@ -844,6 +850,7 @@ async function stepIntoDebugSession() {
         state: updateDebugState({
           status: "paused",
           reason: "Step Into Preview",
+          owner_cell_id: activeDebugPlan.cellId,
           preview_mode: true,
           paused_cell_id: activeDebugPlan.cellId,
           paused_line: statement.lineno,
@@ -874,6 +881,7 @@ async function stepIntoDebugSession() {
       state: updateDebugState({
         status: "exception",
         reason: "Exception paused",
+        owner_cell_id: activeDebugPlan?.cellId ?? null,
         preview_mode: false,
         paused_cell_id: pauseFrame?.cellId ?? activeDebugPlan?.cellId ?? null,
         paused_line: pauseFrame?.line ?? statement?.lineno ?? null,
@@ -892,6 +900,7 @@ async function stepIntoDebugSession() {
       state: updateDebugState({
         status: "paused",
         reason: "Stepped",
+        owner_cell_id: activeDebugPlan.cellId,
         paused_cell_id: activeDebugPlan.cellId,
         paused_line: nextStatement.lineno,
         locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
@@ -906,6 +915,7 @@ async function stepIntoDebugSession() {
     state: updateDebugState({
       status: "completed",
       reason: "Completed",
+      owner_cell_id: null,
       preview_mode: false,
       paused_cell_id: null,
       paused_line: null,
@@ -932,6 +942,7 @@ async function stepOverDebugSession() {
       state: updateDebugState({
         status: "completed",
         reason: "Completed",
+        owner_cell_id: null,
         preview_mode: false,
         paused_cell_id: null,
         paused_line: null,
@@ -950,6 +961,7 @@ async function stepOverDebugSession() {
       state: updateDebugState({
         status: "exception",
         reason: "Exception paused",
+        owner_cell_id: activeDebugPlan?.cellId ?? null,
         preview_mode: false,
         paused_cell_id: pauseFrame?.cellId ?? activeDebugPlan?.cellId ?? null,
         paused_line: pauseFrame?.line ?? statement?.lineno ?? null,
@@ -968,6 +980,7 @@ async function stepOverDebugSession() {
       state: updateDebugState({
         status: "paused",
         reason: "Step Over",
+        owner_cell_id: activeDebugPlan.cellId,
         paused_cell_id: activeDebugPlan.cellId,
         paused_line: nextStatement.lineno,
         locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
@@ -982,6 +995,7 @@ async function stepOverDebugSession() {
     state: updateDebugState({
       status: "completed",
       reason: "Completed",
+      owner_cell_id: null,
       preview_mode: false,
       paused_cell_id: null,
       paused_line: null,
@@ -996,6 +1010,7 @@ function stopDebugSession() {
   return updateDebugState({
     status: "idle",
     reason: "",
+    owner_cell_id: null,
     preview_mode: false,
     paused_cell_id: null,
     paused_line: null,
