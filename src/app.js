@@ -4088,6 +4088,12 @@ async function refreshVariableDetail() {
   }
 
   try {
+    if (notebookState.debug.active && runtimeAdapter.useWorkerRuntime()) {
+      const runtimeState = await runtimeAdapter.fetchDebugState();
+      if (runtimeState) {
+        syncDebugStateFromRuntime(runtimeState);
+      }
+    }
     const debugVariables = activeDebugVariables();
     if (notebookState.debug.active && Array.isArray(debugVariables)) {
       const variable = debugVariables.find((entry) => entry.name === notebookState.selectedVariableName);
