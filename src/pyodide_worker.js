@@ -760,6 +760,7 @@ async function continueDebugSession() {
       activeDebugPlan.skipPreviewStatementIndex = null;
     }
     if (activeDebugPlan.statementIndex > 0 && breakpoints.has(statement.lineno)) {
+      const frames = await snapshotCurrentDebugStack();
       return {
         state: updateDebugState({
           status: "paused",
@@ -768,6 +769,7 @@ async function continueDebugSession() {
           paused_cell_id: cellId,
           paused_line: statement.lineno,
           locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
+          frames: Array.isArray(frames) ? frames : [],
           preview_mode: false,
           note: "Paused at the next breakpoint in the current cell.",
         }),
