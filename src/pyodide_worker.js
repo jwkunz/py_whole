@@ -276,13 +276,14 @@ function updateDebugState(nextState = {}) {
     || (Number.isFinite(nextState.paused_cell_id)
       ? debugCellLabel(nextState.paused_cell_id, nextState.paused_line)
       : "");
+  const topFrameLocals = Array.isArray(nextState.locals) ? nextState.locals : [];
   const frames = Array.isArray(nextState.frames) ? nextState.frames : (
     Number.isFinite(nextState.paused_cell_id)
       ? [{
           cell_id: nextState.paused_cell_id,
           line: nextState.paused_line,
           location_label: currentLocationLabel,
-          locals: [],
+          locals: topFrameLocals,
         }]
       : []
   );
@@ -349,29 +350,12 @@ async function executePlannedStatement(plan, statementIndex) {
   pyodide.setStdout({ batched: (line) => stdout.push(line) });
   pyodide.setStderr({ batched: (line) => stderr.push(line) });
   self.__pyWholeDisplayOutputs = [];
+  let execFn = null;
+  let proxy = null;
   try {
-    const resultJson = await pyodide.runPythonAsync(`
-import json
-
-source = ${JSON.stringify(snippet)}
-filename = ${JSON.stringify(workerDebugFilename(plan.cellId))}
-is_expression = ${statement.is_expression ? "True" : "False"}
-
-_pywhole_patch_matplotlib()
-namespace = __main__.__dict__
-tree = ast.parse(source, mode="exec")
-
-if is_expression and tree.body and isinstance(tree.body[-1], ast.Expr):
-    value = eval(compile(ast.Expression(tree.body[-1].value), filename, "eval"), namespace, namespace)
-    _pywhole_capture_display(value)
-else:
-    exec(compile(tree, filename, "exec"), namespace, namespace)
-
-_pywhole_patch_matplotlib()
-_pywhole_capture_figures()
-json.dumps({"ok": True})
-`);
-    const result = JSON.parse(resultJson || "{\"ok\":true}");
+    execFn = pyodide.globals.get("_pywhole_debug_exec_statement");
+    proxy = execFn(snippet, workerDebugFilename(plan.cellId), statement.is_expression);
+    const result = proxy?.toJs ? proxy.toJs() : proxy;
     return {
       ...result,
       stdout,
@@ -387,6 +371,12 @@ json.dumps({"ok": True})
       displayOutputs: self.__pyWholeDisplayOutputs || [],
     };
   } finally {
+    if (proxy && typeof proxy.destroy === "function") {
+      proxy.destroy();
+    }
+    if (execFn && typeof execFn.destroy === "function") {
+      execFn.destroy();
+    }
     pyodide.setStdout({ batched: () => {} });
     pyodide.setStderr({ batched: () => {} });
   }
@@ -700,6 +690,55 @@ def _pywhole_reset_debug_state():
     global _pywhole_debug_state
     _pywhole_debug_state = _pywhole_debug_empty_state()
     return _pywhole_debug_state
+
+def _pywhole_safe_repr(value, limit=160):
+    try:
+        result = repr(value)
+    except Exception:
+        result = "<unrepresentable>"
+    if len(result) > limit:
+        result = result[: limit - 3] + "..."
+    return result
+
+def _pywhole_debug_snapshot_namespace():
+    namespace = __main__.__dict__
+    variables = []
+    for name in sorted(namespace):
+        if name.startswith("_"):
+            continue
+        value = namespace[name]
+        try:
+            value_type = type(value).__name__
+        except Exception:
+            value_type = "unknown"
+        value_repr = _pywhole_safe_repr(value, 120)
+        variables.append({
+            "name": name,
+            "type": value_type,
+            "value": value_repr,
+            "summary": value_repr,
+            "detail_kind": "text",
+            "detail": _pywhole_safe_repr(value, 4000),
+        })
+    return variables
+
+def _pywhole_debug_exec_statement(source, filename, is_expression):
+    _pywhole_patch_matplotlib()
+    namespace = __main__.__dict__
+    tree = ast.parse(source, mode="exec")
+
+    if is_expression and tree.body and isinstance(tree.body[-1], ast.Expr):
+        value = eval(compile(ast.Expression(tree.body[-1].value), filename, "eval"), namespace, namespace)
+        _pywhole_capture_display(value)
+    else:
+        exec(compile(tree, filename, "exec"), namespace, namespace)
+
+    _pywhole_patch_matplotlib()
+    _pywhole_capture_figures()
+    return {
+        "ok": True,
+        "locals": _pywhole_debug_snapshot_namespace(),
+    }
 
 def _pywhole_list_variables():
     namespace = __main__.__dict__
