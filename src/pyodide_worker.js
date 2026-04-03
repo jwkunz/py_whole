@@ -1346,7 +1346,6 @@ def _pywhole_debug_current_stack():
                     "locals": _pywhole_debug_serialize_locals(current.f_locals),
                 })
         current = current.f_back
-    frames.reverse()
     return frames
 
 def _pywhole_debug_exec_statement(source, filename, is_expression):
