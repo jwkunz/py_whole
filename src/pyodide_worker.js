@@ -1683,6 +1683,23 @@ async function currentDebugStack() {
   return snapshotCurrentDebugStack();
 }
 
+async function fetchDebugState() {
+  const frames = activeDebugPlan && !debugNotebookManifest.previewMode
+    ? await snapshotCurrentDebugStack()
+    : debugNotebookManifest.frames;
+  return updateDebugState({
+    status: debugNotebookManifest.status,
+    reason: debugNotebookManifest.reason,
+    owner_cell_id: Number.isFinite(activeDebugPlan?.cellId) ? activeDebugPlan.cellId : null,
+    preview_mode: debugNotebookManifest.previewMode,
+    paused_cell_id: debugNotebookManifest.pausedCellId,
+    paused_line: debugNotebookManifest.pausedLine,
+    frames: Array.isArray(frames) ? frames : [],
+    selected_frame_index: debugNotebookManifest.selectedFrameIndex,
+    note: debugNotebookManifest.note,
+  });
+}
+
 async function runDiagnostics(checks) {
   await ensurePackagesLoaded((checks || []).map(([packageName]) => packageName));
   const diagnosticsJson = await pyodide.runPythonAsync(`
@@ -1818,7 +1835,7 @@ self.onmessage = async (event) => {
         result = await runDiagnostics(payload?.checks || []);
         break;
       case "fetchDebugState":
-        result = pyodide ? pyodide.globals.get("_pywhole_get_debug_state")().toJs() : null;
+        result = await fetchDebugState();
         break;
       case "resetDebugState":
         result = pyodide ? pyodide.globals.get("_pywhole_reset_debug_state")().toJs() : null;
