@@ -238,14 +238,36 @@ function setDebugNotebookManifest(payload = {}) {
       }
       const upto = String(cell.source || "").slice(0, match.index || 0);
       const line = upto ? upto.split("\n").length + 1 : 1;
+      const bodyLine = findDefinitionBodyLine(String(cell.source || ""), line);
       debugNotebookManifest.authoredDefinitions.set(name, {
         name,
         cell_id: cell.id,
         line,
+        body_line: bodyLine,
       });
     }
   });
   activeDebugPlan = null;
+}
+
+function findDefinitionBodyLine(source, headerLine) {
+  const lines = String(source || "").split("\n");
+  const headerIndex = Math.max(0, Number(headerLine || 1) - 1);
+  const headerText = lines[headerIndex] || "";
+  const headerIndent = headerText.match(/^\s*/)?.[0].length || 0;
+  for (let index = headerIndex + 1; index < lines.length; index += 1) {
+    const rawLine = lines[index] || "";
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+    const indent = rawLine.match(/^\s*/)?.[0].length || 0;
+    if (indent <= headerIndent) {
+      break;
+    }
+    return index + 1;
+  }
+  return Number.isFinite(headerLine) ? headerLine : 1;
 }
 
 function debugCellById(cellId) {
@@ -376,7 +398,10 @@ async function resolveAuthoredCallTarget(statement) {
       if (!parsed) {
         return null;
       }
-      const line = Number.isFinite(entry.line) ? entry.line : entry.first_line;
+      const authoredDefinition = debugNotebookManifest.authoredDefinitions.get(String(entry.name || "").split(".")[0]);
+      const line = Number.isFinite(authoredDefinition?.body_line)
+        ? authoredDefinition.body_line
+        : (Number.isFinite(entry.line) ? entry.line : entry.first_line);
       return {
         ...entry,
         cell_id: parsed.cellId,
@@ -450,8 +475,11 @@ function resolveAuthoredSourceTarget(statement) {
       return {
         name: root,
         cell_id: target.cell_id,
-        line: target.line,
-        location_label: debugCellLabel(target.cell_id, target.line),
+        line: Number.isFinite(target.body_line) ? target.body_line : target.line,
+        location_label: debugCellLabel(
+          target.cell_id,
+          Number.isFinite(target.body_line) ? target.body_line : target.line,
+        ),
       };
     }
   }
@@ -657,6 +685,7 @@ async function continueDebugSession() {
     if (!skipPreview && target && breakpointLines(target.cell_id).length) {
       const pauseLine = targetPauseLine(target);
       const previewLocals = await previewLocalsForTarget(activeDebugPlan, statement, target);
+      const selectedFrameIndex = previewLocals.length ? 0 : 1;
       activeDebugPlan.previewTarget = {
         statementIndex: activeDebugPlan.statementIndex,
         target: {
@@ -687,7 +716,7 @@ async function continueDebugSession() {
               locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
             },
           ],
-          selected_frame_index: 0,
+          selected_frame_index: selectedFrameIndex,
           note: `About to enter authored function with breakpoint: ${target.name}`,
         }),
         outputs,
@@ -757,6 +786,7 @@ async function stepIntoDebugSession() {
     if (target) {
       const pauseLine = targetPauseLine(target);
       const previewLocals = await previewLocalsForTarget(activeDebugPlan, statement, target);
+      const selectedFrameIndex = previewLocals.length ? 0 : 1;
       activeDebugPlan.previewTarget = {
         statementIndex: activeDebugPlan.statementIndex,
         target: {
@@ -787,7 +817,7 @@ async function stepIntoDebugSession() {
               locals: Array.isArray(activeDebugPlan.lastLocals) ? activeDebugPlan.lastLocals : [],
             },
           ],
-          selected_frame_index: 0,
+          selected_frame_index: selectedFrameIndex,
           note: `Authored function entry preview: ${target.name}`,
         }),
         outputs: [],
