@@ -254,6 +254,9 @@ function setDebugNotebookManifest(payload = {}) {
       activeDebugPlan = {
         ...previousPlan,
         previewTarget: null,
+        skipPreviewStatementIndex: Number.isFinite(previousPlan.previewTarget?.statementIndex)
+          ? previousPlan.previewTarget.statementIndex
+          : previousPlan.skipPreviewStatementIndex,
       };
     } else {
       activeDebugPlan = null;
@@ -381,6 +384,7 @@ json.dumps(plan)
     statements,
     statementIndex: 0,
     previewTarget: null,
+    skipPreviewStatementIndex: null,
     lastLocals: initialLocals,
   };
 }
@@ -699,9 +703,11 @@ async function continueDebugSession() {
   const outputs = [];
   while (activeDebugPlan.statementIndex < activeDebugPlan.statements.length) {
     const statement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
-    const skipPreview = activeDebugPlan.previewTarget?.statementIndex === activeDebugPlan.statementIndex;
+    const skipPreview = activeDebugPlan.previewTarget?.statementIndex === activeDebugPlan.statementIndex
+      || activeDebugPlan.skipPreviewStatementIndex === activeDebugPlan.statementIndex;
     if (skipPreview) {
       activeDebugPlan.previewTarget = null;
+      activeDebugPlan.skipPreviewStatementIndex = null;
     }
     if (activeDebugPlan.statementIndex > 0 && breakpoints.has(statement.lineno)) {
       return {
@@ -821,7 +827,12 @@ async function stepIntoDebugSession() {
     };
   }
   const statement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
-  if (!activeDebugPlan.previewTarget) {
+  const skipPreview = activeDebugPlan.previewTarget?.statementIndex === activeDebugPlan.statementIndex
+    || activeDebugPlan.skipPreviewStatementIndex === activeDebugPlan.statementIndex;
+  if (skipPreview) {
+    activeDebugPlan.previewTarget = null;
+    activeDebugPlan.skipPreviewStatementIndex = null;
+  } else if (!activeDebugPlan.previewTarget) {
     const target = await resolveAuthoredCallTarget(statement);
     if (target) {
       const pauseLine = targetPauseLine(target);
