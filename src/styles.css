@@ -857,6 +857,52 @@ button.danger {
   font-family: var(--mono);
 }
 
+.debug-empty {
+  color: var(--muted);
+}
+
+.debug-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.debug-list-item {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--text);
+  box-shadow: none;
+  padding: 0.7rem 0.8rem;
+  text-align: left;
+  justify-content: flex-start;
+  font-family: var(--mono);
+  font-size: 0.83rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.debug-list-item:hover {
+  transform: none;
+  background: rgba(124, 195, 255, 0.08);
+}
+
+.debug-list-item.is-selected {
+  border-color: rgba(124, 195, 255, 0.45);
+  background: rgba(124, 195, 255, 0.12);
+}
+
+.debug-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.debug-controls button {
+  width: 100%;
+}
+
 .variable-detail-viewer {
   display: grid;
   gap: 0.7rem;

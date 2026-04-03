@@ -64,7 +64,6 @@ const notebookState = {
     selectedFrameIndex: 0,
     breakpointsByCell: {},
     note: "",
-    history: [],
   },
   execution: {
     busy: false,
@@ -178,6 +177,108 @@ function parseDebugFilename(filename) {
   return {
     notebookId: decodeURIComponent(match[1]),
     cellId: Number(match[2]),
+  };
+}
+
+function debugFrameCellId(frame) {
+  if (!frame || typeof frame !== "object") {
+    return null;
+  }
+  if (Number.isFinite(frame.cell_id)) {
+    return frame.cell_id;
+  }
+  if (Number.isFinite(frame.cellId)) {
+    return frame.cellId;
+  }
+  const parsed = parseDebugFilename(frame.filename || frame.fileName || "");
+  return parsed?.cellId ?? null;
+}
+
+function debugFrameLineNumber(frame) {
+  if (!frame || typeof frame !== "object") {
+    return null;
+  }
+  if (Number.isFinite(frame.line)) {
+    return frame.line;
+  }
+  if (Number.isFinite(frame.line_number)) {
+    return frame.line_number;
+  }
+  if (Number.isFinite(frame.lineNumber)) {
+    return frame.lineNumber;
+  }
+  return null;
+}
+
+function selectedDebugFrame() {
+  if (!Array.isArray(notebookState.debug.frames) || !notebookState.debug.frames.length) {
+    return null;
+  }
+  const index = Number.isInteger(notebookState.debug.selectedFrameIndex)
+    ? notebookState.debug.selectedFrameIndex
+    : 0;
+  return notebookState.debug.frames[Math.max(0, Math.min(index, notebookState.debug.frames.length - 1))] || null;
+}
+
+function activeDebugCellId() {
+  const frameCellId = debugFrameCellId(selectedDebugFrame());
+  return Number.isFinite(frameCellId) ? frameCellId : notebookState.debug.pausedCellId;
+}
+
+function activeDebugLineNumber() {
+  const frameLine = debugFrameLineNumber(selectedDebugFrame());
+  return Number.isFinite(frameLine) ? frameLine : notebookState.debug.pausedLine;
+}
+
+function activeDebugLocationLabel() {
+  const frame = selectedDebugFrame();
+  if (frame?.location_label || frame?.locationLabel) {
+    return String(frame.location_label || frame.locationLabel);
+  }
+  const notebook = activeNotebook();
+  const cell = notebook?.cells.find((entry) => entry.id === activeDebugCellId()) || null;
+  if (cell) {
+    return debugLocationLabel(cell, activeDebugLineNumber());
+  }
+  return notebookState.debug.currentLocationLabel || "";
+}
+
+function activeDebugVariables() {
+  const frame = selectedDebugFrame();
+  const locals = frame?.locals;
+  if (!Array.isArray(locals)) {
+    return null;
+  }
+  return locals
+    .filter((entry) => entry && typeof entry === "object" && entry.name)
+    .map((entry) => ({
+      name: String(entry.name),
+      type: String(entry.type || ""),
+      value: String(entry.value || ""),
+      summary: String(entry.summary || entry.value || ""),
+      detail: String(entry.detail || entry.value || ""),
+      detail_kind: String(entry.detail_kind || "text"),
+    }));
+}
+
+function currentNotebookDebugPayload(notebook = activeNotebook()) {
+  if (!notebook) {
+    return {
+      notebookId: null,
+      cells: [],
+      breakpointsByCell: {},
+    };
+  }
+  return {
+    notebookId: notebook.id,
+    cells: notebook.cells
+      .filter((cell) => cell.cellType === "code")
+      .map((cell) => ({
+        id: cell.id,
+        cellType: cell.cellType,
+        source: cell.source,
+      })),
+    breakpointsByCell: { ...(notebookState.debug.breakpointsByCell || {}) },
   };
 }
 
@@ -374,7 +475,7 @@ function renderEditorGutter(textarea, cellId, options = {}) {
   }
   const lines = Math.max(1, String(textarea.value || "").split("\n").length);
   const breakpointLines = new Set(breakpointLinesForCell(cellId));
-  const pausedLine = notebookState.debug.pausedCellId === cellId ? notebookState.debug.pausedLine : null;
+  const pausedLine = activeDebugCellId() === cellId ? activeDebugLineNumber() : null;
   const currentLine = currentEditorLineNumber(textarea);
   gutter.replaceChildren(
     ...Array.from({ length: lines }, (_, index) => {
@@ -1015,6 +1116,48 @@ json.dumps(results)
         proxy.destroy();
       }
     }
+  },
+
+  async configureDebugNotebook(payload) {
+    if (!this.pyodide || !this.useWorkerRuntime()) {
+      return null;
+    }
+    return this.callWorker("configureDebugNotebook", payload || {});
+  },
+
+  async startDebugSession(payload) {
+    if (!this.pyodide || !this.useWorkerRuntime()) {
+      return null;
+    }
+    return this.callWorker("startDebugSession", payload || {});
+  },
+
+  async continueDebugSession() {
+    if (!this.pyodide || !this.useWorkerRuntime()) {
+      return null;
+    }
+    return this.callWorker("continueDebugSession");
+  },
+
+  async stepIntoDebugSession() {
+    if (!this.pyodide || !this.useWorkerRuntime()) {
+      return null;
+    }
+    return this.callWorker("stepIntoDebugSession");
+  },
+
+  async stepOverDebugSession() {
+    if (!this.pyodide || !this.useWorkerRuntime()) {
+      return null;
+    }
+    return this.callWorker("stepOverDebugSession");
+  },
+
+  async stopDebugSession() {
+    if (!this.pyodide || !this.useWorkerRuntime()) {
+      return null;
+    }
+    return this.callWorker("stopDebugSession");
   },
 
   async installNotebookHelpers() {
@@ -1804,6 +1947,9 @@ function syncDebugStateFromRuntime(runtimeState) {
   notebookState.debug.selectedFrameIndex = Number.isFinite(nextState.selected_frame_index)
     ? nextState.selected_frame_index
     : (Number.isFinite(nextState.selectedFrameIndex) ? nextState.selectedFrameIndex : 0);
+  if (notebookState.debug.selectedFrameIndex >= notebookState.debug.frames.length) {
+    notebookState.debug.selectedFrameIndex = 0;
+  }
   notebookState.debug.note = String(nextState.note || "");
 }
 
@@ -1827,18 +1973,18 @@ function debugLocationLabel(cell, lineNumber = null) {
 
 function executionStatusText() {
   const { busy, currentCellId, runAll } = notebookState.execution;
-  if (notebookState.debug.status === "exception" && notebookState.debug.currentLocationLabel) {
-    return notebookState.debug.currentLocationLabel;
+  if (notebookState.debug.status === "exception" && activeDebugLocationLabel()) {
+    return activeDebugLocationLabel();
   }
-  if (notebookState.debug.status === "paused" && notebookState.debug.currentLocationLabel) {
-    return notebookState.debug.currentLocationLabel;
+  if (notebookState.debug.status === "paused" && activeDebugLocationLabel()) {
+    return activeDebugLocationLabel();
   }
   if (notebookState.debug.status === "running") {
     return "Running under debugger";
   }
   if (!busy) {
-    if (notebookState.debug.active && notebookState.debug.pausedCellId) {
-      return notebookState.debug.currentLocationLabel || `Debug paused at cell ${notebookState.debug.pausedCellId}`;
+    if (notebookState.debug.active && activeDebugCellId()) {
+      return activeDebugLocationLabel() || `Debug paused at cell ${activeDebugCellId()}`;
     }
     return "Idle";
   }
@@ -1895,6 +2041,7 @@ function syncExecutionUi() {
   }
 
   for (const control of [
+    document.getElementById("menu-debug-cell"),
     document.getElementById("toolbar-add-code-cell"),
     document.getElementById("toolbar-add-markdown-cell"),
     document.getElementById("toolbar-run-active-cell"),
@@ -1929,6 +2076,12 @@ function syncExecutionUi() {
   const toolbarInitButton = document.getElementById("toolbar-initialize-runtime");
   if (toolbarInitButton) {
     toolbarInitButton.disabled = locked || notebookState.runtimeReady;
+  }
+
+  const debugCellMenuButton = document.getElementById("menu-debug-cell");
+  if (debugCellMenuButton) {
+    const selectedCell = selectedNotebookCell();
+    debugCellMenuButton.disabled = locked || !selectedCell || selectedCell.cellType !== "code";
   }
 
   const saveWorkspaceFileButton = document.getElementById("menu-save-workspace-file");
@@ -1968,7 +2121,7 @@ function syncExecutionUi() {
     cellNode.classList.toggle("has-breakpoint", cellHasBreakpoints(cellId));
     cellNode.classList.toggle(
       "is-debug-paused",
-      notebookState.debug.active && notebookState.debug.pausedCellId === cellId,
+      notebookState.debug.active && activeDebugCellId() === cellId,
     );
     cellNode.classList.toggle(
       "is-interrupt-pending",
@@ -3678,9 +3831,11 @@ function renderVariableViewer(variables) {
     notebookState.selectedVariableName = "";
     const empty = document.createElement("div");
     empty.className = "variable-item";
-    empty.textContent = notebookState.runtimeReady
-      ? "No user variables yet."
-      : "Initialize runtime to inspect variables.";
+    empty.textContent = notebookState.debug.active
+      ? "No locals in selected frame."
+      : (notebookState.runtimeReady
+        ? "No user variables yet."
+        : "Initialize runtime to inspect variables.");
     container.replaceChildren(empty);
     renderVariableDetail(null);
     return;
@@ -3785,6 +3940,12 @@ async function refreshVariableViewer() {
   }
 
   try {
+    const debugVariables = activeDebugVariables();
+    if (notebookState.debug.active && debugVariables) {
+      renderVariableViewer(debugVariables);
+      await refreshVariableDetail();
+      return;
+    }
     const variables = await runtimeAdapter.listVariables();
     renderVariableViewer(variables);
     await refreshVariableDetail();
@@ -3804,6 +3965,21 @@ async function refreshVariableDetail() {
   }
 
   try {
+    const debugVariables = activeDebugVariables();
+    if (notebookState.debug.active && Array.isArray(debugVariables)) {
+      const variable = debugVariables.find((entry) => entry.name === notebookState.selectedVariableName);
+      if (variable) {
+        renderVariableDetail({
+          ok: true,
+          name: variable.name,
+          type: variable.type,
+          summary: variable.summary || variable.value,
+          detail_kind: variable.detail_kind || "text",
+          detail: variable.detail || variable.value,
+        });
+        return;
+      }
+    }
     const detail = await runtimeAdapter.inspectVariable(notebookState.selectedVariableName);
     renderVariableDetail(detail);
   } catch (_error) {
@@ -4232,7 +4408,7 @@ function renderNotebook() {
       if (hasBreakpoints) {
         statusParts.push("Breakpoint");
       }
-      if (notebookState.debug.active && notebookState.debug.pausedCellId === cell.id) {
+      if (notebookState.debug.active && activeDebugCellId() === cell.id) {
         statusParts.push("Paused Here");
       } else if (notebookState.execution.busy && notebookState.execution.currentCellId === cell.id) {
         statusParts.push("Running Here");
@@ -4318,7 +4494,7 @@ function renderNotebook() {
       debugButton.disabled = cell.cellType !== "code" || controlsLocked;
       runToCellButton.disabled = cell.cellType !== "code"
         || notebookState.execution.busy
-        || (notebookState.debug.active && notebookState.debug.pausedCellId === cell.id);
+        || (notebookState.debug.active && activeDebugCellId() === cell.id);
       deleteButton.disabled = controlsLocked;
       moveUpButton.disabled = moveUpButton.disabled || controlsLocked;
       moveDownButton.disabled = moveDownButton.disabled || controlsLocked;
@@ -4700,6 +4876,31 @@ function clearAllOutputs() {
   scheduleAutosave();
 }
 
+function normalizeWorkerDebugChunkOutputs(chunks) {
+  const outputs = [];
+  for (const chunk of Array.isArray(chunks) ? chunks : []) {
+    if (Array.isArray(chunk?.stdout) && chunk.stdout.length) {
+      outputs.push(createStreamOutput(chunk.stdout.join("\n"), "stdout"));
+    }
+    outputs.push(...normalizeDisplayOutputs(chunk?.displayOutputs || []));
+    if (Array.isArray(chunk?.stderr) && chunk.stderr.length) {
+      outputs.push(createStreamOutput(chunk.stderr.join("\n"), "stderr"));
+    }
+  }
+  return outputs;
+}
+
+function appendDebugOutputsToCell(cell, chunks) {
+  if (!cell) {
+    return;
+  }
+  const nextOutputs = normalizeWorkerDebugChunkOutputs(chunks);
+  if (!nextOutputs.length) {
+    return;
+  }
+  cell.outputs = [...(Array.isArray(cell.outputs) ? cell.outputs : []), ...nextOutputs];
+}
+
 function clearPausedDebugState() {
   const notebook = activeNotebook();
   if (!notebook) {
@@ -4721,9 +4922,11 @@ function pauseDebugAtCell(cellId, reason) {
 
   clearPausedDebugState();
   notebookState.debug.active = true;
+  notebookState.debug.status = "paused";
+  notebookState.debug.reason = reason;
   notebookState.debug.pausedCellId = cellId;
+  notebookState.debug.pausedLine = 1;
   notebookState.focusedCellId = cellId;
-  pushDebugHistory(reason);
   cell.status = "Paused";
   notebook.updatedAt = new Date().toISOString();
   updateKernelState(reason);
@@ -4733,21 +4936,23 @@ function pauseDebugAtCell(cellId, reason) {
 }
 
 function stopDebugSession(message = "Debug session stopped") {
+  if (runtimeAdapter.useWorkerRuntime() && notebookState.runtimeReady) {
+    void runtimeAdapter.stopDebugSession();
+  }
   clearPausedDebugState();
   notebookState.debug.active = false;
+  notebookState.debug.status = "idle";
+  notebookState.debug.reason = "";
   notebookState.debug.pausedCellId = null;
-  pushDebugHistory(message);
+  notebookState.debug.pausedLine = null;
+  notebookState.debug.currentLocationLabel = "";
+  notebookState.debug.frames = [];
+  notebookState.debug.selectedFrameIndex = 0;
+  notebookState.debug.note = "";
   updateKernelState(message);
   renderNotebook();
   scheduleAutosave();
   renderDebugViewer();
-}
-
-function pushDebugHistory(message) {
-  notebookState.debug.history.push(`${new Date().toLocaleTimeString()}  ${message}`);
-  if (notebookState.debug.history.length > 12) {
-    notebookState.debug.history = notebookState.debug.history.slice(-12);
-  }
 }
 
 function formatDebugCellSummary(cell) {
@@ -4968,8 +5173,113 @@ function renderDebugViewer() {
 
   const notebook = activeNotebook();
   const breakpointCells = breakpointCellsForNotebook(notebook);
-  const pausedCell = notebook?.cells.find((cell) => cell.id === notebookState.debug.pausedCellId);
+  const pausedCell = notebook?.cells.find((cell) => cell.id === activeDebugCellId());
   const cards = [];
+  const navigateToLocation = (cellId, lineNumber = null) => {
+    if (!notebook || !Number.isFinite(cellId)) {
+      return;
+    }
+    const cell = notebook.cells.find((entry) => entry.id === cellId);
+    if (!cell) {
+      return;
+    }
+    notebookState.focusedCellId = cellId;
+    renderNotebook();
+    const editor = document.querySelector(`.cell[data-cell-id="${cellId}"] .cell-editor`);
+    if (editor) {
+      editor.scrollIntoView({ block: "center", behavior: "smooth" });
+      if (Number.isFinite(lineNumber)) {
+        const lines = String(editor.value || "").split("\n");
+        const before = lines.slice(0, Math.max(0, lineNumber - 1)).join("\n");
+        const offset = before ? before.length + 1 : 0;
+        editor.setSelectionRange(offset, offset);
+      }
+    }
+  };
+  const renderDebugList = (entries, emptyMessage) => {
+    if (!entries.length) {
+      const empty = document.createElement("div");
+      empty.className = "debug-empty";
+      empty.textContent = emptyMessage;
+      return empty;
+    }
+    const list = document.createElement("div");
+    list.className = "debug-list";
+    entries.forEach((entry) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "debug-list-item";
+      button.classList.toggle("is-selected", Boolean(entry.selected));
+      button.textContent = entry.label;
+      button.disabled = typeof entry.onClick !== "function";
+      if (typeof entry.onClick === "function") {
+        button.addEventListener("click", entry.onClick);
+      }
+      list.append(button);
+    });
+    return list;
+  };
+  const renderDebugControls = () => {
+    const wrap = document.createElement("div");
+    wrap.className = "debug-controls";
+    const stopOnly = notebookState.debug.status === "exception";
+    const controls = [
+      {
+        label: "Continue",
+        disabled: !notebookState.debug.active || notebookState.execution.busy || stopOnly,
+        onClick: () => void continueDebugSession(),
+      },
+      {
+        label: "Step Into",
+        disabled: !notebookState.debug.active || notebookState.execution.busy || stopOnly,
+        onClick: () => void stepDebugSession(),
+      },
+      {
+        label: "Step Over",
+        disabled: !notebookState.debug.active || notebookState.execution.busy || stopOnly,
+        onClick: () => void stepDebugSession(),
+      },
+      {
+        label: "Stop",
+        disabled: !notebookState.debug.active && notebookState.debug.status !== "exception",
+        onClick: () => stopDebugSession(),
+      },
+    ];
+    controls.forEach((entry) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "secondary";
+      button.textContent = entry.label;
+      button.disabled = entry.disabled;
+      button.addEventListener("click", entry.onClick);
+      wrap.append(button);
+    });
+    return wrap;
+  };
+  const stackEntries = notebookState.debug.frames.map((frame, index) => {
+    const cellId = debugFrameCellId(frame);
+    const lineNumber = debugFrameLineNumber(frame);
+    const label = String(frame?.location_label || frame?.locationLabel || frame?.label || "").trim()
+      || debugLocationLabel(notebook?.cells.find((entry) => entry.id === cellId) || null, lineNumber);
+    return {
+      label,
+      selected: index === notebookState.debug.selectedFrameIndex,
+      onClick: () => {
+        notebookState.debug.selectedFrameIndex = index;
+        renderNotebook();
+        renderDebugViewer();
+        void refreshVariableViewer();
+        navigateToLocation(cellId, lineNumber);
+      },
+    };
+  });
+  const breakpointEntries = breakpointCells.flatMap((cell) =>
+    breakpointLinesForCell(cell.id).map((line) => ({
+      label: debugLocationLabel(cell, line),
+      selected: activeDebugCellId() === cell.id && activeDebugLineNumber() === line,
+      onClick: () => navigateToLocation(cell.id, line),
+    })),
+  );
   const sections = [
     {
       title: "State",
@@ -4981,33 +5291,19 @@ function renderDebugViewer() {
     },
     {
       title: "Current Location",
-      body: pausedCell
-        ? (notebookState.debug.currentLocationLabel || debugLocationLabel(pausedCell, notebookState.debug.pausedLine))
-        : "No active location",
+      body: pausedCell ? activeDebugLocationLabel() : "No active location",
     },
     {
       title: "Call Stack",
-      body: notebookState.debug.frames.length
-        ? notebookState.debug.frames.map((frame, index) => {
-            const label = String(frame?.label || frame?.location || "").trim() || `Frame ${index + 1}`;
-            return index === notebookState.debug.selectedFrameIndex ? `> ${label}` : label;
-          }).join("\n")
-        : "No active stack",
+      body: renderDebugList(stackEntries, "No active stack"),
     },
     {
       title: "Breakpoints",
-      body: breakpointCells.length
-        ? breakpointCells.flatMap((cell) => breakpointLinesForCell(cell.id).map((line) => debugLocationLabel(cell, line))).join("\n")
-        : "No breakpoints set",
+      body: renderDebugList(breakpointEntries, "No breakpoints set"),
     },
     {
       title: "Controls",
-      body: [
-        "F5  Start / Continue",
-        "F10 Step Over",
-        "F11 Step Into",
-        "Shift+F5 Stop",
-      ].join("\n"),
+      body: renderDebugControls(),
     },
   ];
 
@@ -5020,7 +5316,11 @@ function renderDebugViewer() {
     summary.textContent = section.title;
     const bodyNode = document.createElement("div");
     bodyNode.className = "debug-card-body";
-    bodyNode.textContent = section.body;
+    if (typeof section.body === "string") {
+      bodyNode.textContent = section.body;
+    } else {
+      bodyNode.append(section.body);
+    }
     card.append(summary, bodyNode);
     cards.push(card);
   }
@@ -5201,6 +5501,9 @@ function toggleLineBreakpoint(cellId, lineNumber) {
   cell.breakpoint = next.length > 0;
   notebook.updatedAt = new Date().toISOString();
   renderNotebook();
+  if (runtimeAdapter.useWorkerRuntime() && notebookState.runtimeReady) {
+    void runtimeAdapter.configureDebugNotebook(currentNotebookDebugPayload(notebook));
+  }
 }
 
 function toggleBreakpoint(cellId) {
@@ -5219,6 +5522,24 @@ async function startDebugSession(preferredCellId = notebookState.focusedCellId) 
     return;
   }
 
+  if (runtimeAdapter.useWorkerRuntime() && notebookState.runtimeReady) {
+    try {
+      startCell.outputs = [];
+      startCell.status = "Paused";
+      notebook.updatedAt = new Date().toISOString();
+      await runtimeAdapter.configureDebugNotebook(currentNotebookDebugPayload(notebook));
+      const runtimeState = await runtimeAdapter.startDebugSession({ cellId: startCell.id });
+      syncDebugStateFromRuntime(runtimeState);
+      notebookState.focusedCellId = startCell.id;
+      updateKernelState(activeDebugLocationLabel() || `Debug paused at cell ${startCell.id}`);
+      renderNotebook();
+      renderDebugViewer();
+      await refreshVariableViewer();
+      return;
+    } catch (_error) {
+    }
+  }
+
   notebookState.focusedCellId = startCell.id;
   pauseDebugAtCell(startCell.id, `Debugger paused before cell ${startCell.id}.`);
 }
@@ -5227,6 +5548,45 @@ async function continueDebugSession(stopAtCellId = null) {
   const notebook = activeNotebook();
   if (!notebook || notebookState.execution.busy || !notebookState.debug.pausedCellId) {
     return;
+  }
+
+  if (runtimeAdapter.useWorkerRuntime() && notebookState.runtimeReady) {
+    const currentCell = notebook.cells.find((cell) => cell.id === notebookState.debug.pausedCellId);
+    if (!currentCell) {
+      stopDebugSession("Debug session stopped");
+      return;
+    }
+    beginExecution(currentCell.id, { runAll: false });
+    try {
+      const result = await runtimeAdapter.continueDebugSession();
+      appendDebugOutputsToCell(currentCell, result?.outputs || []);
+      syncDebugStateFromRuntime(result?.state || null);
+      if (notebookState.debug.status === "completed") {
+        currentCell.status = "Complete";
+        currentCell.executionCount = (currentCell.executionCount || 0) + 1;
+        updateKernelState("Debug session complete");
+        notebook.updatedAt = new Date().toISOString();
+        renderNotebook();
+        renderDebugViewer();
+        await refreshVariableViewer();
+        stopDebugSession("Debug session complete");
+        return;
+      }
+      if (notebookState.debug.status === "exception") {
+        currentCell.status = "Error";
+        updateKernelState(activeDebugLocationLabel() || "Exception paused");
+      } else {
+        currentCell.status = "Paused";
+        updateKernelState(activeDebugLocationLabel() || "Paused at breakpoint");
+      }
+      notebook.updatedAt = new Date().toISOString();
+      renderNotebook();
+      renderDebugViewer();
+      await refreshVariableViewer();
+      return;
+    } finally {
+      endExecution();
+    }
   }
 
   let currentIndex = notebook.cells.findIndex((cell) => cell.id === notebookState.debug.pausedCellId);
@@ -5240,11 +5600,6 @@ async function continueDebugSession(stopAtCellId = null) {
 
   const currentCell = notebook.cells[currentIndex];
   beginExecution(currentCell.id, { runAll: true });
-  pushDebugHistory(
-    stopAtCellId
-      ? `Continue from cell ${currentCell.id} to cell ${stopAtCellId}`
-      : `Continue from cell ${currentCell.id}`,
-  );
   await executeCodeCell(currentCell, notebook, {
     runningLabel: `Debug continue (cell ${currentCell.id})`,
     successLabel: "Debug continue ready",
@@ -5257,17 +5612,30 @@ async function continueDebugSession(stopAtCellId = null) {
     if (nextCell.cellType !== "code") {
       continue;
     }
-    if (stopAtCellId && nextCell.id === stopAtCellId) {
+  if (stopAtCellId && nextCell.id === stopAtCellId) {
+      if (runtimeAdapter.useWorkerRuntime() && notebookState.runtimeReady) {
+        try {
+          const runtimeState = await runtimeAdapter.startDebugSession({ cellId: nextCell.id });
+          syncDebugStateFromRuntime(runtimeState);
+        } catch (_error) {
+        }
+      }
       pauseDebugAtCell(nextCell.id, `Debugger paused at target cell ${nextCell.id}.`);
       return;
     }
     if (nextCell.breakpoint) {
+      if (runtimeAdapter.useWorkerRuntime() && notebookState.runtimeReady) {
+        try {
+          const runtimeState = await runtimeAdapter.startDebugSession({ cellId: nextCell.id });
+          syncDebugStateFromRuntime(runtimeState);
+        } catch (_error) {
+        }
+      }
       pauseDebugAtCell(nextCell.id, `Debugger paused at breakpoint in cell ${nextCell.id}.`);
       return;
     }
 
     beginExecution(nextCell.id, { runAll: true });
-    pushDebugHistory(`Continue through cell ${nextCell.id}`);
     await executeCodeCell(nextCell, notebook, {
       runningLabel: `Debug continue (cell ${nextCell.id})`,
       successLabel: "Debug continue ready",
@@ -5285,6 +5653,45 @@ async function stepDebugSession() {
     return;
   }
 
+  if (runtimeAdapter.useWorkerRuntime() && notebookState.runtimeReady) {
+    const cell = notebook.cells.find((entry) => entry.id === notebookState.debug.pausedCellId);
+    if (!cell) {
+      stopDebugSession("Debug session stopped");
+      return;
+    }
+    beginExecution(cell.id, { runAll: false });
+    try {
+      const result = await runtimeAdapter.stepIntoDebugSession();
+      appendDebugOutputsToCell(cell, result?.outputs || []);
+      syncDebugStateFromRuntime(result?.state || null);
+      if (notebookState.debug.status === "completed") {
+        cell.status = "Complete";
+        cell.executionCount = (cell.executionCount || 0) + 1;
+        updateKernelState("Debug session complete");
+        notebook.updatedAt = new Date().toISOString();
+        renderNotebook();
+        renderDebugViewer();
+        await refreshVariableViewer();
+        stopDebugSession("Debug session complete");
+        return;
+      }
+      if (notebookState.debug.status === "exception") {
+        cell.status = "Error";
+        updateKernelState(activeDebugLocationLabel() || "Exception paused");
+      } else {
+        cell.status = "Paused";
+        updateKernelState(activeDebugLocationLabel() || "Paused");
+      }
+      notebook.updatedAt = new Date().toISOString();
+      renderNotebook();
+      renderDebugViewer();
+      await refreshVariableViewer();
+      return;
+    } finally {
+      endExecution();
+    }
+  }
+
   const currentIndex = notebook.cells.findIndex((cell) => cell.id === notebookState.debug.pausedCellId);
   if (currentIndex < 0) {
     stopDebugSession("Debug session stopped");
@@ -5295,7 +5702,6 @@ async function stepDebugSession() {
   clearPausedDebugState();
   notebookState.debug.pausedCellId = null;
   beginExecution(cell.id, { runAll: false });
-  pushDebugHistory(`Step cell ${cell.id}`);
   await executeCodeCell(cell, notebook, {
     runningLabel: `Debug step (cell ${cell.id})`,
     successLabel: "Debug step ready",
@@ -5309,6 +5715,13 @@ async function stepDebugSession() {
     return;
   }
 
+  if (runtimeAdapter.useWorkerRuntime() && notebookState.runtimeReady) {
+    try {
+      const runtimeState = await runtimeAdapter.startDebugSession({ cellId: nextCodeCell.id });
+      syncDebugStateFromRuntime(runtimeState);
+    } catch (_error) {
+    }
+  }
   pauseDebugAtCell(nextCodeCell.id, `Debugger stepped to cell ${nextCodeCell.id}.`);
 }
 
@@ -5327,6 +5740,14 @@ function handleGlobalDebugShortcut(event) {
   }
 
   if (event.key === "F10") {
+    event.preventDefault();
+    if (notebookState.debug.active && notebookState.debug.pausedCellId && !notebookState.execution.busy) {
+      void stepDebugSession();
+    }
+    return true;
+  }
+
+  if (event.key === "F11") {
     event.preventDefault();
     if (notebookState.debug.active && notebookState.debug.pausedCellId && !notebookState.execution.busy) {
       void stepDebugSession();
@@ -5479,6 +5900,9 @@ function wireEvents() {
   });
   bindClick("stop-debug", () => stopDebugSession());
   bindClick("toolbar-run-all", runAllCells);
+  bindClick("menu-debug-cell", () => {
+    void startDebugSession();
+  });
   bindClick("menu-clear-outputs-cell", clearActiveCellOutput);
   bindClick("toolbar-run-active-cell", () => {
     void runActiveCell();

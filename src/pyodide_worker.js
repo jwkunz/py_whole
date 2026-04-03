@@ -9,6 +9,24 @@ let pyodide = null;
 let runCellFn = null;
 let loadedPackages = new Set();
 let knownWorkspacePaths = new Set();
+let debugNotebookManifest = {
+  notebookId: null,
+  cells: [],
+  cellMap: new Map(),
+  breakpointsByCell: {},
+  status: "idle",
+  reason: "",
+  pausedCellId: null,
+  pausedLine: null,
+  selectedFrameIndex: 0,
+  note: "",
+};
+let activeDebugPlan = null;
+
+function workerDebugFilename(cellId) {
+  const notebookId = encodeURIComponent(debugNotebookManifest.notebookId || "active");
+  return `pywhole://notebook/${notebookId}/cell/${cellId}.py`;
+}
 
 function normalizeFetchUrl(input) {
   if (typeof input === "string") {
@@ -141,6 +159,370 @@ function ensureParentDirectories(fsApi, filePath) {
     } catch (_error) {
     }
   }
+}
+
+function setDebugNotebookManifest(payload = {}) {
+  const cells = Array.isArray(payload.cells) ? payload.cells : [];
+  debugNotebookManifest = {
+    notebookId: payload.notebookId ?? null,
+    cells: cells
+      .filter((cell) => cell && typeof cell === "object" && Number.isFinite(cell.id))
+      .map((cell) => ({
+        id: cell.id,
+        cellType: String(cell.cellType || "code"),
+        source: String(cell.source || ""),
+      })),
+    cellMap: new Map(),
+    breakpointsByCell: payload.breakpointsByCell && typeof payload.breakpointsByCell === "object"
+      ? payload.breakpointsByCell
+      : {},
+    status: "idle",
+    reason: "",
+    pausedCellId: null,
+    pausedLine: null,
+    selectedFrameIndex: 0,
+    note: "",
+  };
+  debugNotebookManifest.cells.forEach((cell) => {
+    debugNotebookManifest.cellMap.set(cell.id, cell);
+  });
+  activeDebugPlan = null;
+}
+
+function debugCellById(cellId) {
+  return debugNotebookManifest.cellMap.get(cellId) || null;
+}
+
+function debugCellLabel(cellId, lineNumber = null) {
+  const cell = debugCellById(cellId);
+  if (!cell) {
+    return "No active location";
+  }
+  const lines = String(cell.source || "").split("\n");
+  const preview = Number.isFinite(lineNumber)
+    ? (lines[lineNumber - 1] || "").trim()
+    : (lines[0] || "").trim();
+  const lineSuffix = Number.isFinite(lineNumber) ? ` : line ${lineNumber}` : "";
+  return `Cell ${cell.id}${lineSuffix}  ${preview || "(blank line)"}`;
+}
+
+function executableLineNumbers(source) {
+  const lines = String(source || "").split("\n");
+  const result = [];
+  lines.forEach((rawLine, index) => {
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      return;
+    }
+    result.push(index + 1);
+  });
+  return result;
+}
+
+function firstExecutableLine(cellId) {
+  const cell = debugCellById(cellId);
+  if (!cell) {
+    return 1;
+  }
+  return executableLineNumbers(cell.source)[0] || 1;
+}
+
+async function buildDebugPlan(cellId) {
+  const cell = debugCellById(cellId);
+  if (!cell || !pyodide) {
+    return null;
+  }
+  const planJson = await pyodide.runPythonAsync(`
+import json
+
+source = ${JSON.stringify(String(cell.source || ""))}
+tree = ast.parse(source, mode="exec")
+plan = []
+for statement in tree.body:
+    plan.append({
+        "lineno": getattr(statement, "lineno", 1),
+        "end_lineno": getattr(statement, "end_lineno", getattr(statement, "lineno", 1)),
+        "is_expression": isinstance(statement, ast.Expr),
+    })
+json.dumps(plan)
+`);
+  const statements = JSON.parse(planJson || "[]");
+  return {
+    cellId,
+    source: String(cell.source || ""),
+    statements,
+    statementIndex: 0,
+  };
+}
+
+function nextExecutableLine(cellId, currentLine) {
+  const cell = debugCellById(cellId);
+  if (!cell) {
+    return null;
+  }
+  return executableLineNumbers(cell.source).find((line) => line > currentLine) || null;
+}
+
+function breakpointLines(cellId) {
+  const raw = debugNotebookManifest.breakpointsByCell?.[cellId];
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return Array.from(new Set(raw.filter((line) => Number.isInteger(line) && line > 0))).sort((a, b) => a - b);
+}
+
+function updateDebugState(nextState = {}) {
+  const currentLocationLabel = nextState.current_location_label
+    || (Number.isFinite(nextState.paused_cell_id)
+      ? debugCellLabel(nextState.paused_cell_id, nextState.paused_line)
+      : "");
+  const frames = Array.isArray(nextState.frames) ? nextState.frames : (
+    Number.isFinite(nextState.paused_cell_id)
+      ? [{
+          cell_id: nextState.paused_cell_id,
+          line: nextState.paused_line,
+          location_label: currentLocationLabel,
+          locals: [],
+        }]
+      : []
+  );
+  const state = {
+    status: String(nextState.status || "idle"),
+    reason: String(nextState.reason || ""),
+    paused: ["paused", "running", "exception"].includes(String(nextState.status || "idle")),
+    paused_cell_id: Number.isFinite(nextState.paused_cell_id) ? nextState.paused_cell_id : null,
+    paused_line: Number.isFinite(nextState.paused_line) ? nextState.paused_line : null,
+    current_location_label: currentLocationLabel,
+    frames,
+    selected_frame_index: Number.isFinite(nextState.selected_frame_index) ? nextState.selected_frame_index : 0,
+    breakpoints: debugNotebookManifest.cells.flatMap((cell) =>
+      breakpointLines(cell.id).map((line) => ({
+        cell_id: cell.id,
+        line,
+        location_label: debugCellLabel(cell.id, line),
+      }))
+    ),
+    note: String(nextState.note || ""),
+  };
+  debugNotebookManifest.status = state.status;
+  debugNotebookManifest.reason = state.reason;
+  debugNotebookManifest.pausedCellId = state.paused_cell_id;
+  debugNotebookManifest.pausedLine = state.paused_line;
+  debugNotebookManifest.selectedFrameIndex = state.selected_frame_index;
+  debugNotebookManifest.note = state.note;
+  return state;
+}
+
+function configureDebugNotebook(payload = {}) {
+  setDebugNotebookManifest(payload);
+  return updateDebugState({
+    status: "idle",
+    reason: "",
+    note: "Debug runtime protocol configured.",
+  });
+}
+
+async function startDebugSession(payload = {}) {
+  const cellId = Number(payload.cellId);
+  activeDebugPlan = await buildDebugPlan(cellId);
+  const line = activeDebugPlan?.statements?.[0]?.lineno || firstExecutableLine(cellId);
+  return updateDebugState({
+    status: "paused",
+    reason: "Paused on entry",
+    paused_cell_id: cellId,
+    paused_line: line,
+    note: "Worker debug session prepared.",
+  });
+}
+
+async function executePlannedStatement(plan, statementIndex) {
+  if (!plan || !plan.statements?.[statementIndex] || !pyodide) {
+    return null;
+  }
+  const statement = plan.statements[statementIndex];
+  const snippet = String(plan.source || "")
+    .split("\n")
+    .slice(Math.max(0, statement.lineno - 1), statement.end_lineno)
+    .join("\n");
+  const stdout = [];
+  const stderr = [];
+  pyodide.setStdout({ batched: (line) => stdout.push(line) });
+  pyodide.setStderr({ batched: (line) => stderr.push(line) });
+  self.__pyWholeDisplayOutputs = [];
+  try {
+    const resultJson = await pyodide.runPythonAsync(`
+import json
+
+source = ${JSON.stringify(snippet)}
+filename = ${JSON.stringify(workerDebugFilename(plan.cellId))}
+is_expression = ${statement.is_expression ? "True" : "False"}
+
+_pywhole_patch_matplotlib()
+namespace = __main__.__dict__
+tree = ast.parse(source, mode="exec")
+
+if is_expression and tree.body and isinstance(tree.body[-1], ast.Expr):
+    value = eval(compile(ast.Expression(tree.body[-1].value), filename, "eval"), namespace, namespace)
+    _pywhole_capture_display(value)
+else:
+    exec(compile(tree, filename, "exec"), namespace, namespace)
+
+_pywhole_patch_matplotlib()
+_pywhole_capture_figures()
+json.dumps({"ok": True})
+`);
+    const result = JSON.parse(resultJson || "{\"ok\":true}");
+    return {
+      ...result,
+      stdout,
+      stderr,
+      displayOutputs: self.__pyWholeDisplayOutputs || [],
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: String(error?.message || error),
+      stdout,
+      stderr,
+      displayOutputs: self.__pyWholeDisplayOutputs || [],
+    };
+  } finally {
+    pyodide.setStdout({ batched: () => {} });
+    pyodide.setStderr({ batched: () => {} });
+  }
+}
+
+async function continueDebugSession() {
+  if (!activeDebugPlan || !Number.isFinite(activeDebugPlan.cellId)) {
+    return updateDebugState({
+      status: "idle",
+      reason: "",
+      note: "No active debug session.",
+    });
+  }
+  const { cellId } = activeDebugPlan;
+  const breakpoints = new Set(breakpointLines(cellId));
+  const outputs = [];
+  while (activeDebugPlan.statementIndex < activeDebugPlan.statements.length) {
+    const statement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
+    if (activeDebugPlan.statementIndex > 0 && breakpoints.has(statement.lineno)) {
+      return {
+        state: updateDebugState({
+          status: "paused",
+          reason: "Paused at breakpoint",
+          paused_cell_id: cellId,
+          paused_line: statement.lineno,
+          note: "Paused at the next breakpoint in the current cell.",
+        }),
+        outputs,
+      };
+    }
+    const statementResult = await executePlannedStatement(activeDebugPlan, activeDebugPlan.statementIndex);
+    outputs.push(statementResult);
+    if (!statementResult?.ok) {
+      activeDebugPlan = null;
+      return {
+        state: updateDebugState({
+          status: "exception",
+          reason: "Exception paused",
+          paused_cell_id: cellId,
+          paused_line: statement.lineno,
+          note: statementResult.error || "Statement execution failed.",
+        }),
+        outputs,
+      };
+    }
+    activeDebugPlan.statementIndex += 1;
+  }
+  activeDebugPlan = null;
+  return {
+    state: updateDebugState({
+      status: "completed",
+      reason: "Completed",
+      paused_cell_id: null,
+      paused_line: null,
+      note: "Reached the end of the current authored cell.",
+    }),
+    outputs,
+  };
+}
+
+async function stepIntoDebugSession() {
+  if (!activeDebugPlan || !Number.isFinite(activeDebugPlan.cellId)) {
+    return updateDebugState({
+      status: "idle",
+      reason: "",
+      note: "No active debug session.",
+    });
+  }
+  if (activeDebugPlan.statementIndex >= activeDebugPlan.statements.length) {
+    activeDebugPlan = null;
+    return {
+      state: updateDebugState({
+        status: "completed",
+        reason: "Completed",
+        paused_cell_id: null,
+        paused_line: null,
+        note: "Reached the end of the current authored cell.",
+      }),
+      outputs: [],
+    };
+  }
+  const statement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
+  const statementResult = await executePlannedStatement(activeDebugPlan, activeDebugPlan.statementIndex);
+  if (!statementResult?.ok) {
+    activeDebugPlan = null;
+    return {
+      state: updateDebugState({
+        status: "exception",
+        reason: "Exception paused",
+        paused_cell_id: activeDebugPlan?.cellId || null,
+        paused_line: statement?.lineno || null,
+        note: statementResult.error || "Statement execution failed.",
+      }),
+      outputs: [statementResult],
+    };
+  }
+  activeDebugPlan.statementIndex += 1;
+  const nextStatement = activeDebugPlan.statements[activeDebugPlan.statementIndex];
+  if (nextStatement) {
+    return {
+      state: updateDebugState({
+        status: "paused",
+        reason: "Stepped",
+        paused_cell_id: activeDebugPlan.cellId,
+        paused_line: nextStatement.lineno,
+        note: "Advanced to the next top-level statement in the current cell.",
+      }),
+      outputs: [statementResult],
+    };
+  }
+  activeDebugPlan = null;
+  return {
+    state: updateDebugState({
+      status: "completed",
+      reason: "Completed",
+      paused_cell_id: null,
+      paused_line: null,
+      note: "Reached the end of the current authored cell.",
+    }),
+    outputs: [statementResult],
+  };
+}
+
+async function stepOverDebugSession() {
+  return stepIntoDebugSession();
+}
+
+function stopDebugSession() {
+  activeDebugPlan = null;
+  return updateDebugState({
+    status: "idle",
+    reason: "",
+    paused_cell_id: null,
+    paused_line: null,
+    note: "Debug session stopped.",
+  });
 }
 
 async function syncWorkspaceFiles(files) {
@@ -612,6 +994,24 @@ self.onmessage = async (event) => {
         break;
       case "resetDebugState":
         result = pyodide ? pyodide.globals.get("_pywhole_reset_debug_state")().toJs() : null;
+        break;
+      case "configureDebugNotebook":
+        result = configureDebugNotebook(payload || {});
+        break;
+      case "startDebugSession":
+        result = await startDebugSession(payload || {});
+        break;
+      case "continueDebugSession":
+        result = await continueDebugSession();
+        break;
+      case "stepIntoDebugSession":
+        result = await stepIntoDebugSession();
+        break;
+      case "stepOverDebugSession":
+        result = await stepOverDebugSession();
+        break;
+      case "stopDebugSession":
+        result = stopDebugSession();
         break;
       default:
         throw new Error(`Unknown worker message type: ${type}`);
