@@ -662,6 +662,7 @@ async function startDebugSession(payload = {}) {
   const cellId = Number(payload.cellId);
   activeDebugPlan = await buildDebugPlan(cellId);
   const line = activeDebugPlan?.statements?.[0]?.lineno || firstExecutableLine(cellId);
+  const frames = await snapshotCurrentDebugStack();
   return updateDebugState({
     status: "paused",
     reason: "Paused on entry",
@@ -669,6 +670,7 @@ async function startDebugSession(payload = {}) {
     paused_cell_id: cellId,
     paused_line: line,
     locals: Array.isArray(activeDebugPlan?.lastLocals) ? activeDebugPlan.lastLocals : [],
+    frames: Array.isArray(frames) ? frames : [],
     preview_mode: false,
     note: "Worker debug session prepared.",
   });
